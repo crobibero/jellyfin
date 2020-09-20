@@ -79,11 +79,11 @@ namespace MediaBrowser.Model.Dlna
                             DlnaFlags.InteractiveTransferMode |
                             DlnaFlags.DlnaV15;
 
-            //if (isDirectStream)
+            // if (isDirectStream)
             //{
             //    flagValue = flagValue | DlnaFlags.ByteBasedSeek;
             //}
-            //else if (runtimeTicks.HasValue)
+            // else if (runtimeTicks.HasValue)
             //{
             //    flagValue = flagValue | DlnaFlags.TimeBasedSeek;
             //}
@@ -148,16 +148,16 @@ namespace MediaBrowser.Model.Dlna
                             DlnaFlags.InteractiveTransferMode |
                             DlnaFlags.DlnaV15;
 
-            //if (isDirectStream)
+            // if (isDirectStream)
             //{
             //    flagValue = flagValue | DlnaFlags.ByteBasedSeek;
             //}
-            //else if (runtimeTicks.HasValue)
+            // else if (runtimeTicks.HasValue)
             //{
             //    flagValue = flagValue | DlnaFlags.TimeBasedSeek;
             //}
 
-            string dlnaflags = string.Format(";DLNA.ORG_FLAGS={0}",
+            string dlnaflags = string.Format(CultureInfo.InvariantCulture, ";DLNA.ORG_FLAGS={0}",
              DlnaMaps.FlagsToString(flagValue));
 
             ResponseProfile mediaProfile = _profile.GetVideoMediaProfile(container,

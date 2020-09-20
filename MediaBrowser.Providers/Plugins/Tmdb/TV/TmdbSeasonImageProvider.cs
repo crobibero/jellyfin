@@ -1,7 +1,10 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Net;
@@ -20,12 +23,12 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
     public class TmdbSeasonImageProvider : IRemoteImageProvider, IHasOrder
     {
         private readonly IJsonSerializer _jsonSerializer;
-        private readonly IHttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public TmdbSeasonImageProvider(IJsonSerializer jsonSerializer, IHttpClient httpClient)
+        public TmdbSeasonImageProvider(IJsonSerializer jsonSerializer, IHttpClientFactory httpClientFactory)
         {
             _jsonSerializer = jsonSerializer;
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
         }
 
         public int Order => 1;
@@ -34,13 +37,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
         public static string ProviderName => TmdbUtils.ProviderName;
 
-        public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
+        public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
-            return _httpClient.GetResponse(new HttpRequestOptions
-            {
-                CancellationToken = cancellationToken,
-                Url = url
-            });
+            return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
         }
 
         public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
@@ -48,7 +47,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             var season = (Season)item;
             var series = season.Series;
 
-            var seriesId = series?.GetProviderId(MetadataProviders.Tmdb);
+            var seriesId = series?.GetProviderId(MetadataProvider.Tmdb);
 
             if (string.IsNullOrEmpty(seriesId))
             {
@@ -113,9 +112,10 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
         private async Task<List<Poster>> FetchImages(Season item, string tmdbId, string language, CancellationToken cancellationToken)
         {
-            await TmdbSeasonProvider.Current.EnsureSeasonInfo(tmdbId, item.IndexNumber.GetValueOrDefault(), language, cancellationToken).ConfigureAwait(false);
+            var seasonNumber = item.IndexNumber.GetValueOrDefault();
+            await TmdbSeasonProvider.Current.EnsureSeasonInfo(tmdbId, seasonNumber, language, cancellationToken).ConfigureAwait(false);
 
-            var path = TmdbSeriesProvider.Current.GetDataFilePath(tmdbId, language);
+            var path = TmdbSeasonProvider.Current.GetDataFilePath(tmdbId, seasonNumber, language);
 
             if (!string.IsNullOrEmpty(path))
             {

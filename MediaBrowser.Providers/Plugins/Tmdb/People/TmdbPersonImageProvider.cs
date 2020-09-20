@@ -1,6 +1,9 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Net;
@@ -20,18 +23,22 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.People
     {
         private readonly IServerConfigurationManager _config;
         private readonly IJsonSerializer _jsonSerializer;
-        private readonly IHttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
 
-        public TmdbPersonImageProvider(IServerConfigurationManager config, IJsonSerializer jsonSerializer, IHttpClient httpClient)
+        public TmdbPersonImageProvider(IServerConfigurationManager config, IJsonSerializer jsonSerializer, IHttpClientFactory httpClientFactory)
         {
             _config = config;
             _jsonSerializer = jsonSerializer;
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
         }
 
+        public static string ProviderName => TmdbUtils.ProviderName;
+
+        /// <inheritdoc />
         public string Name => ProviderName;
 
-        public static string ProviderName => TmdbUtils.ProviderName;
+        /// <inheritdoc />
+        public int Order => 0;
 
         public bool Supports(BaseItem item)
         {
@@ -49,7 +56,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.People
         public async Task<IEnumerable<RemoteImageInfo>> GetImages(BaseItem item, CancellationToken cancellationToken)
         {
             var person = (Person)item;
-            var id = person.GetProviderId(MetadataProviders.Tmdb);
+            var id = person.GetProviderId(MetadataProvider.Tmdb);
 
             if (!string.IsNullOrEmpty(id))
             {
@@ -98,6 +105,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.People
                 {
                     return 3;
                 }
+
                 if (!isLanguageEn)
                 {
                     if (string.Equals("en", i.Language, StringComparison.OrdinalIgnoreCase))
@@ -105,10 +113,12 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.People
                         return 2;
                     }
                 }
+
                 if (string.IsNullOrEmpty(i.Language))
                 {
                     return isLanguageEn ? 3 : 2;
                 }
+
                 return 0;
             })
                 .ThenByDescending(i => i.CommunityRating ?? 0)
@@ -120,15 +130,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.People
             return profile.Iso_639_1?.ToString();
         }
 
-        public int Order => 0;
-
-        public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
+        public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
-            return _httpClient.GetResponse(new HttpRequestOptions
-            {
-                CancellationToken = cancellationToken,
-                Url = url
-            });
+            return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
         }
     }
 }

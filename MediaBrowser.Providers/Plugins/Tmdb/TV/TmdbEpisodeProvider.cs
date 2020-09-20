@@ -1,11 +1,13 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
@@ -25,8 +27,8 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             IRemoteMetadataProvider<Episode, EpisodeInfo>,
             IHasOrder
     {
-        public TmdbEpisodeProvider(IHttpClient httpClient, IServerConfigurationManager configurationManager, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ILocalizationManager localization, ILoggerFactory loggerFactory)
-            : base(httpClient, configurationManager, jsonSerializer, fileSystem, localization, loggerFactory)
+        public TmdbEpisodeProvider(IHttpClientFactory httpClientFactory, IServerConfigurationManager configurationManager, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ILocalizationManager localization, ILoggerFactory loggerFactory)
+            : base(httpClientFactory, configurationManager, jsonSerializer, fileSystem, localization, loggerFactory)
         { }
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(EpisodeInfo searchInfo, CancellationToken cancellationToken)
@@ -71,7 +73,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                 return result;
             }
 
-            info.SeriesProviderIds.TryGetValue(MetadataProviders.Tmdb.ToString(), out string seriesTmdbId);
+            info.SeriesProviderIds.TryGetValue(MetadataProvider.Tmdb.ToString(), out string seriesTmdbId);
 
             if (string.IsNullOrEmpty(seriesTmdbId))
             {
@@ -107,9 +109,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                 item.ParentIndexNumber = info.ParentIndexNumber;
                 item.IndexNumberEnd = info.IndexNumberEnd;
 
-                if (response.External_Ids.Tvdb_Id > 0)
+                if (response.External_Ids != null && response.External_Ids.Tvdb_Id > 0)
                 {
-                    item.SetProviderId(MetadataProviders.Tvdb, response.External_Ids.Tvdb_Id.ToString(CultureInfo.InvariantCulture));
+                    item.SetProviderId(MetadataProvider.Tvdb, response.External_Ids.Tvdb_Id.Value.ToString(CultureInfo.InvariantCulture));
                 }
 
                 item.PremiereDate = response.Air_Date;
@@ -129,7 +131,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                         {
                             if (video.Site.Equals("youtube", System.StringComparison.OrdinalIgnoreCase))
                             {
-                                var videoUrl = string.Format("http://www.youtube.com/watch?v={0}", video.Key);
+                                var videoUrl = string.Format(CultureInfo.InvariantCulture, "http://www.youtube.com/watch?v={0}", video.Key);
                                 item.AddTrailerUrl(videoUrl);
                             }
                         }
@@ -141,8 +143,8 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                 var credits = response.Credits;
                 if (credits != null)
                 {
-                    //Actors, Directors, Writers - all in People
-                    //actors come from cast
+                    // Actors, Directors, Writers - all in People
+                    // actors come from cast
                     if (credits.Cast != null)
                     {
                         foreach (var actor in credits.Cast.OrderBy(a => a.Order))
@@ -160,7 +162,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                         }
                     }
 
-                    //and the rest from crew
+                    // and the rest from crew
                     if (credits.Crew != null)
                     {
                         var keepTypes = new[]
@@ -199,7 +201,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             return result;
         }
 
-        public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
+        public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
             return GetResponse(url, cancellationToken);
         }

@@ -19,12 +19,12 @@ namespace Emby.Server.Implementations.HttpServer
     /// <summary>
     /// Class WebSocketConnection.
     /// </summary>
-    public class WebSocketConnection : IWebSocketConnection
+    public class WebSocketConnection : IWebSocketConnection, IDisposable
     {
         /// <summary>
         /// The logger.
         /// </summary>
-        private readonly ILogger _logger;
+        private readonly ILogger<WebSocketConnection> _logger;
 
         /// <summary>
         /// The json serializer options.
@@ -119,7 +119,7 @@ namespace Emby.Server.Implementations.HttpServer
                 Memory<byte> memory = writer.GetMemory(512);
                 try
                 {
-                    receiveresult = await _socket.ReceiveAsync(memory, cancellationToken);
+                    receiveresult = await _socket.ReceiveAsync(memory, cancellationToken).ConfigureAwait(false);
                 }
                 catch (WebSocketException ex)
                 {
@@ -137,7 +137,7 @@ namespace Emby.Server.Implementations.HttpServer
                 writer.Advance(bytesRead);
 
                 // Make the data available to the PipeReader
-                FlushResult flushResult = await writer.FlushAsync();
+                FlushResult flushResult = await writer.FlushAsync().ConfigureAwait(false);
                 if (flushResult.IsCompleted)
                 {
                     // The PipeReader stopped reading
@@ -179,7 +179,7 @@ namespace Emby.Server.Implementations.HttpServer
                 return;
             }
 
-            WebSocketMessage<object> stub;
+            WebSocketMessage<object>? stub;
             try
             {
 
@@ -209,6 +209,12 @@ namespace Emby.Server.Implementations.HttpServer
                 return;
             }
 
+            if (stub == null)
+            {
+                _logger.LogError("Error processing web socket message");
+                return;
+            }
+
             // Tell the PipeReader how much of the buffer we have consumed
             reader.AdvanceTo(buffer.End);
 
@@ -223,7 +229,7 @@ namespace Emby.Server.Implementations.HttpServer
 
             if (info.MessageType.Equals("KeepAlive", StringComparison.Ordinal))
             {
-                await SendKeepAliveResponse();
+                await SendKeepAliveResponse().ConfigureAwait(false);
             }
             else
             {
@@ -234,10 +240,12 @@ namespace Emby.Server.Implementations.HttpServer
         private Task SendKeepAliveResponse()
         {
             LastKeepAliveDate = DateTime.UtcNow;
-            return SendAsync(new WebSocketMessage<string>
-            {
-                MessageType = "KeepAlive"
-            }, CancellationToken.None);
+            return SendAsync(
+                new WebSocketMessage<string>
+                {
+                    MessageId = Guid.NewGuid(),
+                    MessageType = "KeepAlive"
+                }, CancellationToken.None);
         }
 
         /// <inheritdoc />

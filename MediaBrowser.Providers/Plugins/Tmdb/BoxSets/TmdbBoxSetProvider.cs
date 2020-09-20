@@ -1,8 +1,12 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Configuration;
@@ -29,12 +33,11 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
         internal static TmdbBoxSetProvider Current;
 
-        private readonly ILogger _logger;
+        private readonly ILogger<TmdbBoxSetProvider> _logger;
         private readonly IJsonSerializer _json;
         private readonly IServerConfigurationManager _config;
         private readonly IFileSystem _fileSystem;
-        private readonly ILocalizationManager _localization;
-        private readonly IHttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILibraryManager _libraryManager;
 
         public TmdbBoxSetProvider(
@@ -42,16 +45,14 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
             IJsonSerializer json,
             IServerConfigurationManager config,
             IFileSystem fileSystem,
-            ILocalizationManager localization,
-            IHttpClient httpClient,
+            IHttpClientFactory httpClientFactory,
             ILibraryManager libraryManager)
         {
             _logger = logger;
             _json = json;
             _config = config;
             _fileSystem = fileSystem;
-            _localization = localization;
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
             _libraryManager = libraryManager;
             Current = this;
         }
@@ -60,7 +61,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(BoxSetInfo searchInfo, CancellationToken cancellationToken)
         {
-            var tmdbId = searchInfo.GetProviderId(MetadataProviders.Tmdb);
+            var tmdbId = searchInfo.GetProviderId(MetadataProvider.Tmdb);
 
             if (!string.IsNullOrEmpty(tmdbId))
             {
@@ -82,7 +83,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
                     ImageUrl = images.Count == 0 ? null : (tmdbImageUrl + images[0].File_Path)
                 };
 
-                result.SetProviderId(MetadataProviders.Tmdb, info.Id.ToString(_usCulture));
+                result.SetProviderId(MetadataProvider.Tmdb, info.Id.ToString(_usCulture));
 
                 return new[] { result };
             }
@@ -92,7 +93,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
         public async Task<MetadataResult<BoxSet>> GetMetadata(BoxSetInfo id, CancellationToken cancellationToken)
         {
-            var tmdbId = id.GetProviderId(MetadataProviders.Tmdb);
+            var tmdbId = id.GetProviderId(MetadataProvider.Tmdb);
 
             // We don't already have an Id, need to fetch it
             if (string.IsNullOrEmpty(tmdbId))
@@ -103,7 +104,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
                 if (searchResult != null)
                 {
-                    tmdbId = searchResult.GetProviderId(MetadataProviders.Tmdb);
+                    tmdbId = searchResult.GetProviderId(MetadataProvider.Tmdb);
                 }
             }
 
@@ -150,7 +151,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
                 Overview = obj.Overview
             };
 
-            item.SetProviderId(MetadataProviders.Tmdb, obj.Id.ToString(_usCulture));
+            item.SetProviderId(MetadataProvider.Tmdb, obj.Id.ToString(_usCulture));
 
             return item;
         }
@@ -159,7 +160,10 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
         {
             var mainResult = await FetchMainResult(tmdbId, preferredMetadataLanguage, cancellationToken).ConfigureAwait(false);
 
-            if (mainResult == null) return;
+            if (mainResult == null)
+            {
+                return;
+            }
 
             var dataFilePath = GetDataFilePath(_config.ApplicationPaths, tmdbId, preferredMetadataLanguage);
 
@@ -170,11 +174,11 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
         private async Task<CollectionResult> FetchMainResult(string id, string language, CancellationToken cancellationToken)
         {
-            var url = string.Format(GetCollectionInfo3, id, TmdbUtils.ApiKey);
+            var url = string.Format(CultureInfo.InvariantCulture, GetCollectionInfo3, id, TmdbUtils.ApiKey);
 
             if (!string.IsNullOrEmpty(language))
             {
-                url += string.Format("&language={0}", TmdbMovieProvider.NormalizeLanguage(language));
+                url += string.Format(CultureInfo.InvariantCulture, "&language={0}", TmdbMovieProvider.NormalizeLanguage(language));
 
                 // Get images in english and with no language
                 url += "&include_image_language=" + TmdbMovieProvider.GetImageLanguagesParam(language);
@@ -182,20 +186,15 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            CollectionResult mainResult;
-
-            using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            foreach (var header in TmdbUtils.AcceptHeaders)
             {
-                Url = url,
-                CancellationToken = cancellationToken,
-                AcceptHeader = TmdbUtils.AcceptHeader
-            }).ConfigureAwait(false))
-            {
-                using (var json = response.Content)
-                {
-                    mainResult = await _json.DeserializeFromStreamAsync<CollectionResult>(json).ConfigureAwait(false);
-                }
+                requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
             }
+
+            using var mainResponse = await TmdbMovieProvider.Current.GetMovieDbResponse(requestMessage, cancellationToken).ConfigureAwait(false);
+            await using var stream = await mainResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var mainResult = await _json.DeserializeFromStreamAsync<CollectionResult>(stream).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -203,7 +202,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
             {
                 if (!string.IsNullOrEmpty(language) && !string.Equals(language, "en", StringComparison.OrdinalIgnoreCase))
                 {
-                    url = string.Format(GetCollectionInfo3, id, TmdbUtils.ApiKey) + "&language=en";
+                    url = string.Format(CultureInfo.InvariantCulture, GetCollectionInfo3, id, TmdbUtils.ApiKey) + "&language=en";
 
                     if (!string.IsNullOrEmpty(language))
                     {
@@ -211,18 +210,14 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
                         url += "&include_image_language=" + TmdbMovieProvider.GetImageLanguagesParam(language);
                     }
 
-                    using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+                    using var langRequestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+                    foreach (var header in TmdbUtils.AcceptHeaders)
                     {
-                        Url = url,
-                        CancellationToken = cancellationToken,
-                        AcceptHeader = TmdbUtils.AcceptHeader
-                    }).ConfigureAwait(false))
-                    {
-                        using (var json = response.Content)
-                        {
-                            mainResult = await _json.DeserializeFromStreamAsync<CollectionResult>(json).ConfigureAwait(false);
-                        }
+                        langRequestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
                     }
+
+                    await using var langStream = await mainResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    mainResult = await _json.DeserializeFromStreamAsync<CollectionResult>(langStream).ConfigureAwait(false);
                 }
             }
 
@@ -253,7 +248,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
         {
             var path = GetDataPath(appPaths, tmdbId);
 
-            var filename = string.Format("all-{0}.json", preferredLanguage ?? string.Empty);
+            var filename = string.Format(CultureInfo.InvariantCulture, "all-{0}.json", preferredLanguage ?? string.Empty);
 
             return Path.Combine(path, filename);
         }
@@ -272,13 +267,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.BoxSets
             return dataPath;
         }
 
-        public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
+        public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
-            return _httpClient.GetResponse(new HttpRequestOptions
-            {
-                CancellationToken = cancellationToken,
-                Url = url
-            });
+            return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
         }
     }
 }

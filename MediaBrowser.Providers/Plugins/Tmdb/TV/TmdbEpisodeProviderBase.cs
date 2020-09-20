@@ -1,6 +1,10 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Net;
@@ -17,21 +21,21 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
     public abstract class TmdbEpisodeProviderBase
     {
         private const string EpisodeUrlPattern = TmdbUtils.BaseTmdbApiUrl + @"3/tv/{0}/season/{1}/episode/{2}?api_key={3}&append_to_response=images,external_ids,credits,videos";
-        private readonly IHttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly IServerConfigurationManager _configurationManager;
         private readonly IJsonSerializer _jsonSerializer;
         private readonly IFileSystem _fileSystem;
         private readonly ILocalizationManager _localization;
-        private readonly ILogger _logger;
+        private readonly ILogger<TmdbEpisodeProviderBase> _logger;
 
-        protected TmdbEpisodeProviderBase(IHttpClient httpClient, IServerConfigurationManager configurationManager, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ILocalizationManager localization, ILoggerFactory loggerFactory)
+        protected TmdbEpisodeProviderBase(IHttpClientFactory httpClientFactory, IServerConfigurationManager configurationManager, IJsonSerializer jsonSerializer, IFileSystem fileSystem, ILocalizationManager localization, ILoggerFactory loggerFactory)
         {
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
             _configurationManager = configurationManager;
             _jsonSerializer = jsonSerializer;
             _fileSystem = fileSystem;
             _localization = localization;
-            _logger = loggerFactory.CreateLogger(GetType().Name);
+            _logger = loggerFactory.CreateLogger<TmdbEpisodeProviderBase>();
         }
 
         protected ILogger Logger => _logger;
@@ -89,7 +93,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
             var path = TmdbSeriesProvider.GetSeriesDataPath(_configurationManager.ApplicationPaths, tmdbId);
 
-            var filename = string.Format("season-{0}-episode-{1}-{2}.json",
+            var filename = string.Format(CultureInfo.InvariantCulture, "season-{0}-episode-{1}-{2}.json",
                 seasonNumber.ToString(CultureInfo.InvariantCulture),
                 episodeNumber.ToString(CultureInfo.InvariantCulture),
                 preferredLanguage);
@@ -109,11 +113,17 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
         internal async Task<EpisodeResult> FetchMainResult(string urlPattern, string id, int seasonNumber, int episodeNumber, string language, CancellationToken cancellationToken)
         {
-            var url = string.Format(urlPattern, id, seasonNumber.ToString(CultureInfo.InvariantCulture), episodeNumber, TmdbUtils.ApiKey);
+            var url = string.Format(
+                CultureInfo.InvariantCulture,
+                urlPattern,
+                id,
+                seasonNumber.ToString(CultureInfo.InvariantCulture),
+                episodeNumber,
+                TmdbUtils.ApiKey);
 
             if (!string.IsNullOrEmpty(language))
             {
-                url += string.Format("&language={0}", language);
+                url += string.Format(CultureInfo.InvariantCulture, "&language={0}", language);
             }
 
             var includeImageLanguageParam = TmdbMovieProvider.GetImageLanguagesParam(language);
@@ -122,28 +132,20 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            foreach (var header in TmdbUtils.AcceptHeaders)
             {
-                Url = url,
-                CancellationToken = cancellationToken,
-                AcceptHeader = TmdbUtils.AcceptHeader
-
-            }).ConfigureAwait(false))
-            {
-                using (var json = response.Content)
-                {
-                    return await _jsonSerializer.DeserializeFromStreamAsync<EpisodeResult>(json).ConfigureAwait(false);
-                }
+                requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
             }
+
+            using var response = await TmdbMovieProvider.Current.GetMovieDbResponse(requestMessage, cancellationToken).ConfigureAwait(false);
+            await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            return await _jsonSerializer.DeserializeFromStreamAsync<EpisodeResult>(stream).ConfigureAwait(false);
         }
 
-        protected Task<HttpResponseInfo> GetResponse(string url, CancellationToken cancellationToken)
+        protected Task<HttpResponseMessage> GetResponse(string url, CancellationToken cancellationToken)
         {
-            return _httpClient.GetResponse(new HttpRequestOptions
-            {
-                CancellationToken = cancellationToken,
-                Url = url
-            });
+            return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
         }
     }
 }

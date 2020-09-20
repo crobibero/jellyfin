@@ -1,8 +1,12 @@
+#pragma warning disable CS1591
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using MediaBrowser.Common.Configuration;
@@ -31,9 +35,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
         private readonly IJsonSerializer _jsonSerializer;
         private readonly IFileSystem _fileSystem;
         private readonly IServerConfigurationManager _configurationManager;
-        private readonly ILogger _logger;
+        private readonly ILogger<TmdbSeriesProvider> _logger;
         private readonly ILocalizationManager _localization;
-        private readonly IHttpClient _httpClient;
+        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILibraryManager _libraryManager;
 
         private readonly CultureInfo _usCulture = new CultureInfo("en-US");
@@ -46,7 +50,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             IServerConfigurationManager configurationManager,
             ILogger<TmdbSeriesProvider> logger,
             ILocalizationManager localization,
-            IHttpClient httpClient,
+            IHttpClientFactory httpClientFactory,
             ILibraryManager libraryManager)
         {
             _jsonSerializer = jsonSerializer;
@@ -54,7 +58,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             _configurationManager = configurationManager;
             _logger = logger;
             _localization = localization;
-            _httpClient = httpClient;
+            _httpClientFactory = httpClientFactory;
             _libraryManager = libraryManager;
             Current = this;
         }
@@ -63,7 +67,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
         public async Task<IEnumerable<RemoteSearchResult>> GetSearchResults(SeriesInfo searchInfo, CancellationToken cancellationToken)
         {
-            var tmdbId = searchInfo.GetProviderId(MetadataProviders.Tmdb);
+            var tmdbId = searchInfo.GetProviderId(MetadataProvider.Tmdb);
 
             if (!string.IsNullOrEmpty(tmdbId))
             {
@@ -85,18 +89,18 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                     ImageUrl = string.IsNullOrWhiteSpace(obj.Poster_Path) ? null : tmdbImageUrl + obj.Poster_Path
                 };
 
-                remoteResult.SetProviderId(MetadataProviders.Tmdb, obj.Id.ToString(_usCulture));
-                remoteResult.SetProviderId(MetadataProviders.Imdb, obj.External_Ids.Imdb_Id);
+                remoteResult.SetProviderId(MetadataProvider.Tmdb, obj.Id.ToString(_usCulture));
+                remoteResult.SetProviderId(MetadataProvider.Imdb, obj.External_Ids.Imdb_Id);
 
-                if (obj.External_Ids.Tvdb_Id > 0)
+                if (obj.External_Ids != null && obj.External_Ids.Tvdb_Id > 0)
                 {
-                    remoteResult.SetProviderId(MetadataProviders.Tvdb, obj.External_Ids.Tvdb_Id.ToString(_usCulture));
+                    remoteResult.SetProviderId(MetadataProvider.Tvdb, obj.External_Ids.Tvdb_Id.Value.ToString(_usCulture));
                 }
 
                 return new[] { remoteResult };
             }
 
-            var imdbId = searchInfo.GetProviderId(MetadataProviders.Imdb);
+            var imdbId = searchInfo.GetProviderId(MetadataProvider.Imdb);
 
             if (!string.IsNullOrEmpty(imdbId))
             {
@@ -108,7 +112,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                 }
             }
 
-            var tvdbId = searchInfo.GetProviderId(MetadataProviders.Tvdb);
+            var tvdbId = searchInfo.GetProviderId(MetadataProvider.Tvdb);
 
             if (!string.IsNullOrEmpty(tvdbId))
             {
@@ -128,11 +132,11 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             var result = new MetadataResult<Series>();
             result.QueriedById = true;
 
-            var tmdbId = info.GetProviderId(MetadataProviders.Tmdb);
+            var tmdbId = info.GetProviderId(MetadataProvider.Tmdb);
 
             if (string.IsNullOrEmpty(tmdbId))
             {
-                var imdbId = info.GetProviderId(MetadataProviders.Imdb);
+                var imdbId = info.GetProviderId(MetadataProvider.Imdb);
 
                 if (!string.IsNullOrEmpty(imdbId))
                 {
@@ -140,14 +144,14 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
                     if (searchResult != null)
                     {
-                        tmdbId = searchResult.GetProviderId(MetadataProviders.Tmdb);
+                        tmdbId = searchResult.GetProviderId(MetadataProvider.Tmdb);
                     }
                 }
             }
 
             if (string.IsNullOrEmpty(tmdbId))
             {
-                var tvdbId = info.GetProviderId(MetadataProviders.Tvdb);
+                var tvdbId = info.GetProviderId(MetadataProvider.Tvdb);
 
                 if (!string.IsNullOrEmpty(tvdbId))
                 {
@@ -155,7 +159,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
                     if (searchResult != null)
                     {
-                        tmdbId = searchResult.GetProviderId(MetadataProviders.Tmdb);
+                        tmdbId = searchResult.GetProviderId(MetadataProvider.Tmdb);
                     }
                 }
             }
@@ -169,7 +173,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
                 if (searchResult != null)
                 {
-                    tmdbId = searchResult.GetProviderId(MetadataProviders.Tmdb);
+                    tmdbId = searchResult.GetProviderId(MetadataProvider.Tmdb);
                 }
             }
 
@@ -219,7 +223,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
             series.Name = seriesInfo.Name;
             series.OriginalTitle = seriesInfo.Original_Name;
-            series.SetProviderId(MetadataProviders.Tmdb, seriesInfo.Id.ToString(_usCulture));
+            series.SetProviderId(MetadataProvider.Tmdb, seriesInfo.Id.ToString(_usCulture));
 
             string voteAvg = seriesInfo.Vote_Average.ToString(CultureInfo.InvariantCulture);
 
@@ -261,17 +265,17 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             {
                 if (!string.IsNullOrWhiteSpace(ids.Imdb_Id))
                 {
-                    series.SetProviderId(MetadataProviders.Imdb, ids.Imdb_Id);
+                    series.SetProviderId(MetadataProvider.Imdb, ids.Imdb_Id);
                 }
 
                 if (ids.Tvrage_Id > 0)
                 {
-                    series.SetProviderId(MetadataProviders.TvRage, ids.Tvrage_Id.ToString(_usCulture));
+                    series.SetProviderId(MetadataProvider.TvRage, ids.Tvrage_Id.Value.ToString(_usCulture));
                 }
 
                 if (ids.Tvdb_Id > 0)
                 {
-                    series.SetProviderId(MetadataProviders.Tvdb, ids.Tvdb_Id.ToString(_usCulture));
+                    series.SetProviderId(MetadataProvider.Tvdb, ids.Tvdb_Id.Value.ToString(_usCulture));
                 }
             }
 
@@ -331,7 +335,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
                         if (actor.Id > 0)
                         {
-                            personInfo.SetProviderId(MetadataProviders.Tmdb, actor.Id.ToString(CultureInfo.InvariantCulture));
+                            personInfo.SetProviderId(MetadataProvider.Tmdb, actor.Id.ToString(CultureInfo.InvariantCulture));
                         }
 
                         seriesResult.AddPerson(personInfo);
@@ -401,7 +405,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
         internal async Task<SeriesResult> FetchMainResult(string id, string language, CancellationToken cancellationToken)
         {
-            var url = string.Format(GetTvInfo3, id, TmdbUtils.ApiKey);
+            var url = string.Format(CultureInfo.InvariantCulture, GetTvInfo3, id, TmdbUtils.ApiKey);
 
             if (!string.IsNullOrEmpty(language))
             {
@@ -411,24 +415,19 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            SeriesResult mainResult;
-
-            using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+            using var mainRequestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            foreach (var header in TmdbUtils.AcceptHeaders)
             {
-                Url = url,
-                CancellationToken = cancellationToken,
-                AcceptHeader = TmdbUtils.AcceptHeader
-            }).ConfigureAwait(false))
-            {
-                using (var json = response.Content)
-                {
-                    mainResult = await _jsonSerializer.DeserializeFromStreamAsync<SeriesResult>(json).ConfigureAwait(false);
+                mainRequestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
+            }
 
-                    if (!string.IsNullOrEmpty(language))
-                    {
-                        mainResult.ResultLanguage = language;
-                    }
-                }
+            using var mainResponse = await TmdbMovieProvider.Current.GetMovieDbResponse(mainRequestMessage, cancellationToken).ConfigureAwait(false);
+            await using var mainStream = await mainResponse.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var mainResult = await _jsonSerializer.DeserializeFromStreamAsync<SeriesResult>(mainStream).ConfigureAwait(false);
+
+            if (!string.IsNullOrEmpty(language))
+            {
+                mainResult.ResultLanguage = language;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -441,7 +440,7 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
             {
                 _logger.LogInformation("MovieDbSeriesProvider couldn't find meta for language {Language}. Trying English...", language);
 
-                url = string.Format(GetTvInfo3, id, TmdbUtils.ApiKey) + "&language=en";
+                url = string.Format(CultureInfo.InvariantCulture, GetTvInfo3, id, TmdbUtils.ApiKey) + "&language=en";
 
                 if (!string.IsNullOrEmpty(language))
                 {
@@ -449,21 +448,18 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
                     url += "&include_image_language=" + TmdbMovieProvider.GetImageLanguagesParam(language);
                 }
 
-                using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+                foreach (var header in TmdbUtils.AcceptHeaders)
                 {
-                    Url = url,
-                    CancellationToken = cancellationToken,
-                    AcceptHeader = TmdbUtils.AcceptHeader
-                }).ConfigureAwait(false))
-                {
-                    using (var json = response.Content)
-                    {
-                        var englishResult = await _jsonSerializer.DeserializeFromStreamAsync<SeriesResult>(json).ConfigureAwait(false);
-
-                        mainResult.Overview = englishResult.Overview;
-                        mainResult.ResultLanguage = "en";
-                    }
+                    mainRequestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
                 }
+
+                using var response = await TmdbMovieProvider.Current.GetMovieDbResponse(requestMessage, cancellationToken).ConfigureAwait(false);
+                await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var englishResult = await _jsonSerializer.DeserializeFromStreamAsync<SeriesResult>(stream).ConfigureAwait(false);
+
+                mainResult.Overview = englishResult.Overview;
+                mainResult.ResultLanguage = "en";
             }
 
             return mainResult;
@@ -501,50 +497,52 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
 
             var path = GetSeriesDataPath(_configurationManager.ApplicationPaths, tmdbId);
 
-            var filename = string.Format("series-{0}.json", preferredLanguage ?? string.Empty);
+            var filename = string.Format(CultureInfo.InvariantCulture, "series-{0}.json", preferredLanguage ?? string.Empty);
 
             return Path.Combine(path, filename);
         }
 
         private async Task<RemoteSearchResult> FindByExternalId(string id, string externalSource, CancellationToken cancellationToken)
         {
-            var url = string.Format(TmdbUtils.BaseTmdbApiUrl + @"3/find/{0}?api_key={1}&external_source={2}",
+            var url = string.Format(
+                CultureInfo.InvariantCulture,
+                TmdbUtils.BaseTmdbApiUrl + @"3/find/{0}?api_key={1}&external_source={2}",
                 id,
                 TmdbUtils.ApiKey,
                 externalSource);
 
-            using (var response = await TmdbMovieProvider.Current.GetMovieDbResponse(new HttpRequestOptions
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
+            foreach (var header in TmdbUtils.AcceptHeaders)
             {
-                Url = url,
-                CancellationToken = cancellationToken,
-                AcceptHeader = TmdbUtils.AcceptHeader
-            }).ConfigureAwait(false))
+                requestMessage.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(header));
+            }
+
+            using var response = await TmdbMovieProvider.Current.GetMovieDbResponse(requestMessage, cancellationToken).ConfigureAwait(false);
+            await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+
+            var result = await _jsonSerializer.DeserializeFromStreamAsync<ExternalIdLookupResult>(stream).ConfigureAwait(false);
+
+            if (result != null && result.Tv_Results != null)
             {
-                using (var json = response.Content)
+                var tv = result.Tv_Results.FirstOrDefault();
+
+                if (tv != null)
                 {
-                    var result = await _jsonSerializer.DeserializeFromStreamAsync<ExternalIdLookupResult>(json).ConfigureAwait(false);
+                    var tmdbSettings = await TmdbMovieProvider.Current.GetTmdbSettings(cancellationToken).ConfigureAwait(false);
+                    var tmdbImageUrl = tmdbSettings.images.GetImageUrl("original");
 
-                    if (result != null && result.Tv_Results != null)
+                    var remoteResult = new RemoteSearchResult
                     {
-                        var tv = result.Tv_Results.FirstOrDefault();
+                        Name = tv.Name,
+                        SearchProviderName = Name,
+                        ImageUrl = string.IsNullOrWhiteSpace(tv.Poster_Path)
+                            ? null
+                            : tmdbImageUrl + tv.Poster_Path
+                    };
 
-                        if (tv != null)
-                        {
-                            var tmdbSettings = await TmdbMovieProvider.Current.GetTmdbSettings(cancellationToken).ConfigureAwait(false);
-                            var tmdbImageUrl = tmdbSettings.images.GetImageUrl("original");
+                    remoteResult.SetProviderId(MetadataProvider.Tmdb, tv.Id.ToString(_usCulture));
 
-                            var remoteResult = new RemoteSearchResult
-                            {
-                                Name = tv.Name,
-                                SearchProviderName = Name,
-                                ImageUrl = string.IsNullOrWhiteSpace(tv.Poster_Path) ? null : tmdbImageUrl + tv.Poster_Path
-                            };
-
-                            remoteResult.SetProviderId(MetadataProviders.Tmdb, tv.Id.ToString(_usCulture));
-
-                            return remoteResult;
-                        }
-                    }
+                    return remoteResult;
                 }
             }
 
@@ -554,13 +552,9 @@ namespace MediaBrowser.Providers.Plugins.Tmdb.TV
         // After TheTVDB
         public int Order => 1;
 
-        public Task<HttpResponseInfo> GetImageResponse(string url, CancellationToken cancellationToken)
+        public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
-            return _httpClient.GetResponse(new HttpRequestOptions
-            {
-                CancellationToken = cancellationToken,
-                Url = url
-            });
+            return _httpClientFactory.CreateClient(NamedClient.Default).GetAsync(url, cancellationToken);
         }
     }
 }
