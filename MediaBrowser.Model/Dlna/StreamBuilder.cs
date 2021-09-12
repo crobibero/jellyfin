@@ -598,8 +598,10 @@ namespace MediaBrowser.Model.Dlna
 
             var videoStream = item.VideoStream;
 
+            var transcodeReasons = new HashSet<TranscodeReason>();
+
             // First, try to DirectPlay.
-            var (canDirectPlayStream, transcodeReasons) = TryBuildVideoStreamForDirectPlay(item, options, videoStream, audioStream, subtitleStream, outputStream);
+            var canDirectPlayStream = TryBuildVideoStreamForDirectPlay(item, options, videoStream, audioStream, subtitleStream, outputStream, transcodeReasons);
             if (canDirectPlayStream)
             {
                 return outputStream;
@@ -637,7 +639,7 @@ namespace MediaBrowser.Model.Dlna
                         return 128000;
                     }
 
-                    return (audioChannels ?? 0) >= 6 ? 640000 : 384000;
+                    return audioChannels >= 6 ? 640000 : 384000;
                 }
 
                 if (string.Equals(audioCodec, "flac", StringComparison.OrdinalIgnoreCase)
@@ -648,7 +650,7 @@ namespace MediaBrowser.Model.Dlna
                         return 768000;
                     }
 
-                    return (audioChannels ?? 0) >= 6 ? 3584000 : 1536000;
+                    return audioChannels >= 6 ? 3584000 : 1536000;
                 }
             }
 
@@ -686,8 +688,6 @@ namespace MediaBrowser.Model.Dlna
 
         private IEnumerable<ProfileCondition> FindFailedConditions(IEnumerable<ProfileCondition> conditions, CodecType codecType, MediaSourceInfo mediaSource, MediaStream stream)
         {
-            var failedConditions = new List<ProfileCondition>();
-
             int? bitrate = stream?.BitRate;
             string profile = stream?.Profile;
             int? bitDepth = stream?.BitDepth;
@@ -764,7 +764,7 @@ namespace MediaBrowser.Model.Dlna
             yield break;
         }
 
-        private (bool, HashSet<TranscodeReason>) TryBuildVideoStreamForDirectPlay(MediaSourceInfo mediaSource, VideoOptions options, MediaStream videoStream, MediaStream audioStream, MediaStream subtitleStream, StreamInfo outputStream)
+        private bool TryBuildVideoStreamForDirectPlay(MediaSourceInfo mediaSource, VideoOptions options, MediaStream videoStream, MediaStream audioStream, MediaStream subtitleStream, StreamInfo outputStream, HashSet<TranscodeReason> transcodeReasons)
         {
             // TODO: This doesn't account for situations where the device is able to handle the media's bitrate, but the connection isn't fast enough
             var directPlayEligibilityResult = IsEligibleForDirectPlay(mediaSource, GetBitrateForDirectPlayCheck(mediaSource, options, true) ?? 0, subtitleStream, options, PlayMethod.DirectPlay);
@@ -778,8 +778,6 @@ namespace MediaBrowser.Model.Dlna
                 mediaSource.Path ?? "Unknown path",
                 isEligibleForDirectPlay,
                 isEligibleForDirectStream);
-
-            var transcodeReasons = new HashSet<TranscodeReason>();
 
             // Local lambda that adds transcode reasons from direct play/stream eligibility checks
             Action addEligibilityTranscodeReasons = () =>
@@ -798,7 +796,7 @@ namespace MediaBrowser.Model.Dlna
             if (!isEligibleForDirectPlay && !isEligibleForDirectStream)
             {
                 addEligibilityTranscodeReasons();
-                return (false, transcodeReasons);
+                return false;
             }
 
             // Since the stream is eligible for direct play, see if it can be direct played
@@ -809,7 +807,7 @@ namespace MediaBrowser.Model.Dlna
             {
                 transcodeReasons.UnionWith(directPlayInfo.Item2);
                 addEligibilityTranscodeReasons();
-                return (false, transcodeReasons);
+                return false;
             }
 
             outputStream.PlayMethod = directPlay.Value;
@@ -823,7 +821,7 @@ namespace MediaBrowser.Model.Dlna
                 outputStream.SubtitleFormat = subtitleProfile.Format;
             }
 
-            return (true, transcodeReasons);
+            return true;
         }
 
         private bool TryBuildVideoStreamForNonVideoTranscode(IEnumerable<TranscodeReason> transcodeReasons, MediaSourceInfo mediaSource, VideoOptions options, MediaStream videoStream, MediaStream audioStream, MediaStream subtitleStream, StreamInfo outputStream)
@@ -892,10 +890,9 @@ namespace MediaBrowser.Model.Dlna
                 outputStream.SubtitleCodecs = new[] { subtitleProfile.Format };
             }
 
-
-
             return true;
         }
+
         private bool TryBuildVideoStreamForFullTranscode(IEnumerable<TranscodeReason> transcodeReasons, MediaSourceInfo mediaSource, VideoOptions options, MediaStream videoStream, MediaStream audioStream, MediaStream subtitleStream, StreamInfo outputStream)
         {
             // Can't direct play, find the transcoding profile
