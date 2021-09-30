@@ -700,8 +700,10 @@ namespace MediaBrowser.Model.Dlna
                             {
                                 yield return condition;
                             }
+
                             break;
                         }
+
                     case CodecType.VideoAudio:
                         {
                             if (!ConditionProcessor.IsAudioConditionSatisfied(condition, channels, bitrate, sampleRate, bitDepth))
@@ -711,6 +713,7 @@ namespace MediaBrowser.Model.Dlna
 
                             break;
                         }
+
                     case CodecType.Video:
                         {
                             int? width = stream?.Width;
