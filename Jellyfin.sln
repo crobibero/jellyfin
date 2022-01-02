@@ -89,6 +89,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Extensions", "src\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Extensions.Tests", "tests\Jellyfin.Extensions.Tests\Jellyfin.Extensions.Tests.csproj", "{332A5C7A-F907-47CA-910E-BE6F7371B9E0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Saunter", "..\saunter\src\Saunter\Saunter.csproj", "{81BB4C20-BF6F-4D7E-B000-CF23EBF544A4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -243,6 +245,10 @@ Global
 		{332A5C7A-F907-47CA-910E-BE6F7371B9E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{332A5C7A-F907-47CA-910E-BE6F7371B9E0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{332A5C7A-F907-47CA-910E-BE6F7371B9E0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{81BB4C20-BF6F-4D7E-B000-CF23EBF544A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{81BB4C20-BF6F-4D7E-B000-CF23EBF544A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{81BB4C20-BF6F-4D7E-B000-CF23EBF544A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{81BB4C20-BF6F-4D7E-B000-CF23EBF544A4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

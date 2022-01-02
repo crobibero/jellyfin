@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using Emby.Server.Implementations;
+using Emby.Server.Implementations.HttpServer;
 using Jellyfin.Api.Auth;
 using Jellyfin.Api.Auth.AnonymousLanAccessPolicy;
 using Jellyfin.Api.Auth.DefaultAuthorizationPolicy;
@@ -38,8 +39,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Any;
 using Microsoft.OpenApi.Interfaces;
 using Microsoft.OpenApi.Models;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using Saunter;
+using Saunter.AsyncApiSchema.v2;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using AuthenticationSchemes = Jellyfin.Api.Constants.AuthenticationSchemes;
+using SecuritySchemeType = Microsoft.OpenApi.Models.SecuritySchemeType;
 
 namespace Jellyfin.Server.Extensions
 {
@@ -330,6 +336,35 @@ namespace Jellyfin.Server.Extensions
                 c.OperationFilter<FileRequestFilter>();
                 c.OperationFilter<ParameterObsoleteFilter>();
                 c.DocumentFilter<AdditionalModelFilter>();
+            });
+        }
+
+        /// <summary>
+        /// Adds AsyncApi to the service collection.
+        /// </summary>
+        /// <param name="serviceCollection">The service collection.</param>
+        /// <returns>The updated service collection.</returns>
+        public static IServiceCollection AddAsyncApi(this IServiceCollection serviceCollection)
+        {
+            return serviceCollection.AddAsyncApiSchemaGeneration(options =>
+            {
+                options.AssemblyMarkerTypes = new[]
+                {
+                    typeof(WebSocketConnection),
+                };
+                var version = typeof(ApplicationHost).Assembly.GetName().Version?.ToString(3) ?? "0.0.1";
+                options.AsyncApi = new AsyncApiDocument
+                {
+                    Info = new Info("Jellyfin Websocket Documentation", version),
+                    Servers =
+                    {
+                        ["websocket"] = new Saunter.AsyncApiSchema.v2.Server("localhost:8096", "wss")
+                    }
+                };
+
+                options.JsonSchemaGeneratorSettings.SerializerSettings.Converters.Add(new StringEnumConverter());
+                options.JsonSchemaGeneratorSettings.SerializerSettings.Formatting = Formatting.Indented;
+                options.Middleware.UiTitle = "Jellyfin Websocket Documentation";
             });
         }
 
