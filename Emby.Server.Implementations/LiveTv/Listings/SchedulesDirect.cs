@@ -9,8 +9,9 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Net.Mime;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -20,7 +21,6 @@ using Jellyfin.Extensions;
 using Jellyfin.Extensions.Json;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.LiveTv;
-using MediaBrowser.Model.Cryptography;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.LiveTv;
@@ -35,7 +35,6 @@ namespace Emby.Server.Implementations.LiveTv.Listings
         private readonly ILogger<SchedulesDirect> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly SemaphoreSlim _tokenSemaphore = new SemaphoreSlim(1, 1);
-        private readonly ICryptoProvider _cryptoProvider;
 
         private readonly ConcurrentDictionary<string, NameValuePair> _tokens = new ConcurrentDictionary<string, NameValuePair>();
         private readonly JsonSerializerOptions _jsonOptions = JsonDefaults.Options;
@@ -43,12 +42,10 @@ namespace Emby.Server.Implementations.LiveTv.Listings
 
         public SchedulesDirect(
             ILogger<SchedulesDirect> logger,
-            IHttpClientFactory httpClientFactory,
-            ICryptoProvider cryptoProvider)
+            IHttpClientFactory httpClientFactory)
         {
             _logger = logger;
             _httpClientFactory = httpClientFactory;
-            _cryptoProvider = cryptoProvider;
         }
 
         /// <inheritdoc />
@@ -104,11 +101,10 @@ namespace Emby.Server.Implementations.LiveTv.Listings
                     }
                 };
 
-            var requestString = JsonSerializer.Serialize(requestList, _jsonOptions);
-            _logger.LogDebug("Request string for schedules is: {RequestString}", requestString);
+            _logger.LogDebug("Request string for schedules is: {@RequestString}", requestList);
 
             using var options = new HttpRequestMessage(HttpMethod.Post, ApiUrl + "/schedules");
-            options.Content = new StringContent(requestString, Encoding.UTF8, MediaTypeNames.Application.Json);
+            options.Content = JsonContent.Create(requestList, options: _jsonOptions);
             options.Headers.TryAddWithoutValidation("token", token);
             using var response = await Send(options, true, info, cancellationToken).ConfigureAwait(false);
             await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -124,8 +120,7 @@ namespace Emby.Server.Implementations.LiveTv.Listings
             programRequestOptions.Headers.TryAddWithoutValidation("token", token);
 
             var programIds = dailySchedules.SelectMany(d => d.Programs.Select(s => s.ProgramId)).Distinct();
-            programRequestOptions.Content = new ByteArrayContent(JsonSerializer.SerializeToUtf8Bytes(programIds, _jsonOptions));
-            programRequestOptions.Content.Headers.ContentType = MediaTypeHeaderValue.Parse(MediaTypeNames.Application.Json);
+            programRequestOptions.Content = JsonContent.Create(programIds, options: _jsonOptions);
 
             using var innerResponse = await Send(programRequestOptions, true, info, cancellationToken).ConfigureAwait(false);
             await using var innerResponseStream = await innerResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
@@ -164,17 +159,17 @@ namespace Emby.Server.Implementations.LiveTv.Listings
                         var programEntry = programDict[schedule.ProgramId];
 
                         var allImages = images[imageIndex].Data;
-                        var imagesWithText = allImages.Where(i => string.Equals(i.Text, "yes", StringComparison.OrdinalIgnoreCase));
-                        var imagesWithoutText = allImages.Where(i => string.Equals(i.Text, "no", StringComparison.OrdinalIgnoreCase));
+                        var imagesWithText = allImages.Where(i => string.Equals(i.Text, "yes", StringComparison.OrdinalIgnoreCase)).ToList();
+                        var imagesWithoutText = allImages.Where(i => string.Equals(i.Text, "no", StringComparison.OrdinalIgnoreCase)).ToList();
 
                         const double DesiredAspect = 2.0 / 3;
 
-                        programEntry.PrimaryImage = GetProgramImage(ApiUrl, imagesWithText, true, DesiredAspect) ??
-                                                    GetProgramImage(ApiUrl, allImages, true, DesiredAspect);
+                        programEntry.PrimaryImage = GetProgramImage(ApiUrl, imagesWithText, DesiredAspect) ??
+                                                    GetProgramImage(ApiUrl, allImages, DesiredAspect);
 
                         const double WideAspect = 16.0 / 9;
 
-                        programEntry.ThumbImage = GetProgramImage(ApiUrl, imagesWithText, true, WideAspect);
+                        programEntry.ThumbImage = GetProgramImage(ApiUrl, imagesWithText, WideAspect);
 
                         // Don't supply the same image twice
                         if (string.Equals(programEntry.PrimaryImage, programEntry.ThumbImage, StringComparison.Ordinal))
@@ -182,7 +177,7 @@ namespace Emby.Server.Implementations.LiveTv.Listings
                             programEntry.ThumbImage = null;
                         }
 
-                        programEntry.BackdropImage = GetProgramImage(ApiUrl, imagesWithoutText, true, WideAspect);
+                        programEntry.BackdropImage = GetProgramImage(ApiUrl, imagesWithoutText, WideAspect);
 
                         // programEntry.bannerImage = GetProgramImage(ApiUrl, data, "Banner", false) ??
                         //    GetProgramImage(ApiUrl, data, "Banner-L1", false) ??
@@ -246,19 +241,19 @@ namespace Emby.Server.Implementations.LiveTv.Listings
 
             if (programInfo.AudioProperties.Count != 0)
             {
-                if (programInfo.AudioProperties.Contains("atmos", StringComparer.OrdinalIgnoreCase))
+                if (programInfo.AudioProperties.Contains("atmos", StringComparison.OrdinalIgnoreCase))
                 {
                     audioType = ProgramAudio.Atmos;
                 }
-                else if (programInfo.AudioProperties.Contains("dd 5.1", StringComparer.OrdinalIgnoreCase))
+                else if (programInfo.AudioProperties.Contains("dd 5.1", StringComparison.OrdinalIgnoreCase))
                 {
                     audioType = ProgramAudio.DolbyDigital;
                 }
-                else if (programInfo.AudioProperties.Contains("dd", StringComparer.OrdinalIgnoreCase))
+                else if (programInfo.AudioProperties.Contains("dd", StringComparison.OrdinalIgnoreCase))
                 {
                     audioType = ProgramAudio.DolbyDigital;
                 }
-                else if (programInfo.AudioProperties.Contains("stereo", StringComparer.OrdinalIgnoreCase))
+                else if (programInfo.AudioProperties.Contains("stereo", StringComparison.OrdinalIgnoreCase))
                 {
                     audioType = ProgramAudio.Stereo;
                 }
@@ -320,8 +315,8 @@ namespace Emby.Server.Implementations.LiveTv.Listings
 
             if (programInfo.VideoProperties != null)
             {
-                info.IsHD = programInfo.VideoProperties.Contains("hdtv", StringComparer.OrdinalIgnoreCase);
-                info.Is3D = programInfo.VideoProperties.Contains("3d", StringComparer.OrdinalIgnoreCase);
+                info.IsHD = programInfo.VideoProperties.Contains("hdtv", StringComparison.OrdinalIgnoreCase);
+                info.Is3D = programInfo.VideoProperties.Contains("3d", StringComparison.OrdinalIgnoreCase);
             }
 
             if (details.ContentRating != null && details.ContentRating.Count > 0)
@@ -330,7 +325,7 @@ namespace Emby.Server.Implementations.LiveTv.Listings
                     .Replace("--", "-", StringComparison.Ordinal);
 
                 var invalid = new[] { "N/A", "Approved", "Not Rated", "Passed" };
-                if (invalid.Contains(info.OfficialRating, StringComparer.OrdinalIgnoreCase))
+                if (invalid.Contains(info.OfficialRating, StringComparison.OrdinalIgnoreCase))
                 {
                     info.OfficialRating = null;
                 }
@@ -392,9 +387,9 @@ namespace Emby.Server.Implementations.LiveTv.Listings
             if (details.Genres != null)
             {
                 info.Genres = details.Genres.Where(g => !string.IsNullOrWhiteSpace(g)).ToList();
-                info.IsNews = details.Genres.Contains("news", StringComparer.OrdinalIgnoreCase);
+                info.IsNews = details.Genres.Contains("news", StringComparison.OrdinalIgnoreCase);
 
-                if (info.Genres.Contains("children", StringComparer.OrdinalIgnoreCase))
+                if (info.Genres.Contains("children", StringComparison.OrdinalIgnoreCase))
                 {
                     info.IsKids = true;
                 }
@@ -403,7 +398,7 @@ namespace Emby.Server.Implementations.LiveTv.Listings
             return info;
         }
 
-        private string GetProgramImage(string apiUrl, IEnumerable<ImageDataDto> images, bool returnDefaultImage, double desiredAspect)
+        private static string GetProgramImage(string apiUrl, IEnumerable<ImageDataDto> images, double desiredAspect)
         {
             var match = images
                 .OrderBy(i => Math.Abs(desiredAspect - GetAspectRatio(i)))
@@ -648,7 +643,9 @@ namespace Emby.Server.Implementations.LiveTv.Listings
             CancellationToken cancellationToken)
         {
             using var options = new HttpRequestMessage(HttpMethod.Post, ApiUrl + "/token");
-            var hashedPasswordBytes = _cryptoProvider.ComputeHash("SHA1", Encoding.ASCII.GetBytes(password), Array.Empty<byte>());
+#pragma warning disable CA5350 // SchedulesDirect is always SHA1.
+            var hashedPasswordBytes = SHA1.HashData(Encoding.ASCII.GetBytes(password));
+#pragma warning restore CA5350
             // TODO: remove ToLower when Convert.ToHexString supports lowercase
             // Schedules Direct requires the hex to be lowercase
             string hashedPassword = Convert.ToHexString(hashedPasswordBytes).ToLowerInvariant();
@@ -824,11 +821,6 @@ namespace Emby.Server.Implementations.LiveTv.Listings
             }
 
             return list;
-        }
-
-        private static string NormalizeName(string value)
-        {
-            return value.Replace(" ", string.Empty, StringComparison.Ordinal).Replace("-", string.Empty, StringComparison.Ordinal);
         }
     }
 }

@@ -3,18 +3,13 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Api.Constants;
-using Jellyfin.Extensions;
-using MediaBrowser.Common.Extensions;
-using MediaBrowser.Common.Net;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
-using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Providers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -30,7 +25,6 @@ namespace Jellyfin.Api.Controllers
     {
         private readonly IProviderManager _providerManager;
         private readonly IServerApplicationPaths _applicationPaths;
-        private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILibraryManager _libraryManager;
 
         /// <summary>
@@ -38,17 +32,14 @@ namespace Jellyfin.Api.Controllers
         /// </summary>
         /// <param name="providerManager">Instance of the <see cref="IProviderManager"/> interface.</param>
         /// <param name="applicationPaths">Instance of the <see cref="IServerApplicationPaths"/> interface.</param>
-        /// <param name="httpClientFactory">Instance of the <see cref="IHttpClientFactory"/> interface.</param>
         /// <param name="libraryManager">Instance of the <see cref="ILibraryManager"/> interface.</param>
         public RemoteImageController(
             IProviderManager providerManager,
             IServerApplicationPaths applicationPaths,
-            IHttpClientFactory httpClientFactory,
             ILibraryManager libraryManager)
         {
             _providerManager = providerManager;
             _applicationPaths = applicationPaths;
-            _httpClientFactory = httpClientFactory;
             _libraryManager = libraryManager;
         }
 
@@ -89,7 +80,8 @@ namespace Jellyfin.Api.Controllers
                         IncludeAllLanguages = includeAllLanguages,
                         IncludeDisabledProviders = true,
                         ImageType = type
-                    }, CancellationToken.None)
+                    },
+                    CancellationToken.None)
                 .ConfigureAwait(false);
 
             var imageArray = images.ToArray();

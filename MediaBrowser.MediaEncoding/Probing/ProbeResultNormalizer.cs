@@ -28,7 +28,7 @@ namespace MediaBrowser.MediaEncoding.Probing
 
         private readonly char[] _nameDelimiters = { '/', '|', ';', '\\' };
 
-        private static readonly Regex _performerPattern = new (@"(?<name>.*) \((?<instrument>.*)\)");
+        private static readonly Regex _performerPattern = new(@"(?<name>.*) \((?<instrument>.*)\)");
 
         private readonly ILogger _logger;
         private readonly ILocalizationManager _localization;
@@ -45,6 +45,7 @@ namespace MediaBrowser.MediaEncoding.Probing
         {
             "AC/DC",
             "Au/Ra",
+            "Bremer/McCoy",
             "이달의 소녀 1/3",
             "LOONA 1/3",
             "LOONA / yyxy",
@@ -582,7 +583,8 @@ namespace MediaBrowser.MediaEncoding.Probing
         /// <returns>MediaAttachments.</returns>
         private MediaAttachment GetMediaAttachment(MediaStreamInfo streamInfo)
         {
-            if (!string.Equals(streamInfo.CodecType, "attachment", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(streamInfo.CodecType, "attachment", StringComparison.OrdinalIgnoreCase)
+                && streamInfo.Disposition?.GetValueOrDefault("attached_pic") != 1)
             {
                 return null;
             }
@@ -645,11 +647,6 @@ namespace MediaBrowser.MediaEncoding.Probing
                 string.Equals(streamInfo.IsAvc, "0", StringComparison.OrdinalIgnoreCase))
             {
                 stream.IsAVC = false;
-            }
-
-            if (!string.IsNullOrWhiteSpace(streamInfo.FieldOrder) && !string.Equals(streamInfo.FieldOrder, "progressive", StringComparison.OrdinalIgnoreCase))
-            {
-                stream.IsInterlaced = true;
             }
 
             // Filter out junk
@@ -720,15 +717,30 @@ namespace MediaBrowser.MediaEncoding.Probing
             }
             else if (string.Equals(streamInfo.CodecType, "video", StringComparison.OrdinalIgnoreCase))
             {
-                stream.Type = isAudio || string.Equals(stream.Codec, "mjpeg", StringComparison.OrdinalIgnoreCase) || string.Equals(stream.Codec, "gif", StringComparison.OrdinalIgnoreCase) || string.Equals(stream.Codec, "png", StringComparison.OrdinalIgnoreCase)
-                    ? MediaStreamType.EmbeddedImage
-                    : MediaStreamType.Video;
-
                 stream.AverageFrameRate = GetFrameRate(streamInfo.AverageFrameRate);
                 stream.RealFrameRate = GetFrameRate(streamInfo.RFrameRate);
 
-                if (isAudio || string.Equals(stream.Codec, "gif", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(stream.Codec, "png", StringComparison.OrdinalIgnoreCase))
+                // Some interlaced H.264 files in mp4 containers using MBAFF coding aren't flagged as being interlaced by FFprobe,
+                // so for H.264 files we also calculate the frame rate from the codec time base and check if it is double the reported
+                // frame rate (both rounded to the nearest integer) to determine if the file is interlaced
+                int roundedTimeBaseFPS = Convert.ToInt32(1 / GetFrameRate(stream.CodecTimeBase) ?? 0);
+                int roundedDoubleFrameRate = Convert.ToInt32(stream.AverageFrameRate * 2 ?? 0);
+
+                bool videoInterlaced = !string.IsNullOrWhiteSpace(streamInfo.FieldOrder)
+                    && !string.Equals(streamInfo.FieldOrder, "progressive", StringComparison.OrdinalIgnoreCase);
+                bool h264MbaffCoded = string.Equals(stream.Codec, "h264", StringComparison.OrdinalIgnoreCase)
+                    && string.IsNullOrWhiteSpace(streamInfo.FieldOrder)
+                    && roundedTimeBaseFPS == roundedDoubleFrameRate;
+
+                if (videoInterlaced || h264MbaffCoded)
+                {
+                    stream.IsInterlaced = true;
+                }
+
+                if (isAudio
+                    || string.Equals(stream.Codec, "mjpeg", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(stream.Codec, "gif", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(stream.Codec, "png", StringComparison.OrdinalIgnoreCase))
                 {
                     stream.Type = MediaStreamType.EmbeddedImage;
                 }
@@ -765,18 +777,23 @@ namespace MediaBrowser.MediaEncoding.Probing
 
                 if (!stream.BitDepth.HasValue)
                 {
-                    if (!string.IsNullOrEmpty(streamInfo.PixelFormat)
-                        && streamInfo.PixelFormat.Contains("p10", StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(streamInfo.PixelFormat))
                     {
-                        stream.BitDepth = 10;
-                    }
-
-                    if (!string.IsNullOrEmpty(streamInfo.Profile)
-                        && (streamInfo.Profile.Contains("Main 10", StringComparison.OrdinalIgnoreCase)
-                            || streamInfo.Profile.Contains("High 10", StringComparison.OrdinalIgnoreCase)
-                            || streamInfo.Profile.Contains("Profile 2", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        stream.BitDepth = 10;
+                        if (string.Equals(streamInfo.PixelFormat, "yuv420p", StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(streamInfo.PixelFormat, "yuv444p", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stream.BitDepth = 8;
+                        }
+                        else if (string.Equals(streamInfo.PixelFormat, "yuv420p10le", StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(streamInfo.PixelFormat, "yuv444p10le", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stream.BitDepth = 10;
+                        }
+                        else if (string.Equals(streamInfo.PixelFormat, "yuv420p12le", StringComparison.OrdinalIgnoreCase)
+                                 || string.Equals(streamInfo.PixelFormat, "yuv444p12le", StringComparison.OrdinalIgnoreCase))
+                        {
+                            stream.BitDepth = 12;
+                        }
                     }
                 }
 
@@ -1015,27 +1032,32 @@ namespace MediaBrowser.MediaEncoding.Probing
         /// </summary>
         /// <param name="value">The value.</param>
         /// <returns>System.Nullable{System.Single}.</returns>
-        private float? GetFrameRate(string value)
+        internal static float? GetFrameRate(ReadOnlySpan<char> value)
         {
-            if (string.IsNullOrEmpty(value))
+            if (value.IsEmpty)
             {
                 return null;
             }
 
-            var parts = value.Split('/');
-
-            float result;
-
-            if (parts.Length == 2)
+            int index = value.IndexOf('/');
+            if (index == -1)
             {
-                result = float.Parse(parts[0], CultureInfo.InvariantCulture) / float.Parse(parts[1], CultureInfo.InvariantCulture);
-            }
-            else
-            {
-                result = float.Parse(parts[0], CultureInfo.InvariantCulture);
+                // REVIEW: is this branch actually required? (i.e. does ffprobe ever output something other than a fraction?)
+                if (float.TryParse(value, NumberStyles.AllowThousands | NumberStyles.Float, CultureInfo.InvariantCulture, out var result))
+                {
+                    return result;
+                }
+
+                return null;
             }
 
-            return float.IsNaN(result) ? null : result;
+            if (!float.TryParse(value[..index], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dividend)
+                || !float.TryParse(value[(index + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var divisor))
+            {
+                return null;
+            }
+
+            return divisor == 0f ? null : dividend / divisor;
         }
 
         private void SetAudioRuntimeTicks(InternalMediaInfoResult result, MediaInfo data)
@@ -1345,8 +1367,8 @@ namespace MediaBrowser.MediaEncoding.Probing
                 }
 
                 // Don't add artist/album artist name to studios, even if it's listed there
-                if (info.Artists.Contains(studio, StringComparer.OrdinalIgnoreCase)
-                    || info.AlbumArtists.Contains(studio, StringComparer.OrdinalIgnoreCase))
+                if (info.Artists.Contains(studio, StringComparison.OrdinalIgnoreCase)
+                    || info.AlbumArtists.Contains(studio, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

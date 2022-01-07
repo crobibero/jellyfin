@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Jellyfin.Extensions;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
@@ -117,16 +118,10 @@ namespace MediaBrowser.LocalMetadata.Images
                 return Enumerable.Empty<FileSystemMetadata>();
             }
 
-            if (includeDirectories)
-            {
-                return directoryService.GetFileSystemEntries(path)
-                .Where(i => BaseItem.SupportedImageExtensions.Contains(i.Extension, StringComparer.OrdinalIgnoreCase) || i.IsDirectory)
-
-                .OrderBy(i => Array.IndexOf(BaseItem.SupportedImageExtensions, i.Extension ?? string.Empty));
-            }
-
-            return directoryService.GetFiles(path)
-                .Where(i => BaseItem.SupportedImageExtensions.Contains(i.Extension, StringComparer.OrdinalIgnoreCase))
+            return directoryService.GetFileSystemEntries(path)
+                .Where(i =>
+                    (includeDirectories && i.IsDirectory)
+                    || BaseItem.SupportedImageExtensions.Contains(i.Extension, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(i => Array.IndexOf(BaseItem.SupportedImageExtensions, i.Extension ?? string.Empty));
         }
 
@@ -201,7 +196,7 @@ namespace MediaBrowser.LocalMetadata.Images
                 added = AddImage(files, images, "logo", imagePrefix, isInMixedFolder, ImageType.Logo);
                 if (!added)
                 {
-                    added = AddImage(files, images, "clearlogo", imagePrefix, isInMixedFolder, ImageType.Logo);
+                    AddImage(files, images, "clearlogo", imagePrefix, isInMixedFolder, ImageType.Logo);
                 }
             }
 
@@ -218,7 +213,7 @@ namespace MediaBrowser.LocalMetadata.Images
 
                 if (!added)
                 {
-                    added = AddImage(files, images, "disc", imagePrefix, isInMixedFolder, ImageType.Disc);
+                    AddImage(files, images, "disc", imagePrefix, isInMixedFolder, ImageType.Disc);
                 }
             }
             else if (item is Video || item is BoxSet)
@@ -232,7 +227,7 @@ namespace MediaBrowser.LocalMetadata.Images
 
                 if (!added)
                 {
-                    added = AddImage(files, images, "discart", imagePrefix, isInMixedFolder, ImageType.Disc);
+                    AddImage(files, images, "discart", imagePrefix, isInMixedFolder, ImageType.Disc);
                 }
             }
 
@@ -248,18 +243,13 @@ namespace MediaBrowser.LocalMetadata.Images
                 added = AddImage(files, images, "landscape", imagePrefix, isInMixedFolder, ImageType.Thumb);
                 if (!added)
                 {
-                    added = AddImage(files, images, "thumb", imagePrefix, isInMixedFolder, ImageType.Thumb);
+                    AddImage(files, images, "thumb", imagePrefix, isInMixedFolder, ImageType.Thumb);
                 }
             }
 
             if (!isEpisode && !isSong && !isPerson)
             {
                 PopulateBackdrops(item, images, files, imagePrefix, isInMixedFolder);
-            }
-
-            if (item is IHasScreenshots)
-            {
-                PopulateScreenshots(images, files, imagePrefix, isInMixedFolder);
             }
         }
 
@@ -361,11 +351,6 @@ namespace MediaBrowser.LocalMetadata.Images
                 FileInfo = i,
                 Type = ImageType.Backdrop
             }));
-        }
-
-        private void PopulateScreenshots(List<LocalImageInfo> images, List<FileSystemMetadata> files, string imagePrefix, bool isInMixedFolder)
-        {
-            PopulateBackdrops(images, files, imagePrefix, "screenshot", "screenshot", isInMixedFolder, ImageType.Screenshot);
         }
 
         private void PopulateBackdrops(List<LocalImageInfo> images, List<FileSystemMetadata> files, string imagePrefix, string firstFileName, string subsequentFileNamePrefix, bool isInMixedFolder, ImageType type)

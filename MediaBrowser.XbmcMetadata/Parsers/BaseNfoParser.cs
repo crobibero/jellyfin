@@ -784,8 +784,18 @@ namespace MediaBrowser.XbmcMetadata.Parsers
 
                 case "fanart":
                     {
-                        var subtree = reader.ReadSubtree();
-                        subtree.ReadToDescendant("thumb");
+                        if (reader.IsEmptyElement)
+                        {
+                            reader.Read();
+                            break;
+                        }
+
+                        using var subtree = reader.ReadSubtree();
+                        if (!subtree.ReadToDescendant("thumb"))
+                        {
+                            break;
+                        }
+
                         FetchThumbNode(subtree, itemResult);
                         break;
                     }
@@ -862,7 +872,7 @@ namespace MediaBrowser.XbmcMetadata.Parsers
             else
             {
                 // only allow one item of each type
-                if (itemResult.RemoteImages.Any(x => x.type == imageType))
+                if (itemResult.RemoteImages.Any(x => x.Type == imageType))
                 {
                     return;
                 }
