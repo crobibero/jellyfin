@@ -69,11 +69,11 @@ namespace Emby.Dlna.PlayTo
 
         public TransportState TransportState { get; private set; }
 
-        public bool IsPlaying => TransportState == TransportState.Playing;
+        public bool IsPlaying => TransportState == TransportState.PLAYING;
 
-        public bool IsPaused => TransportState == TransportState.Paused || TransportState == TransportState.PausedPlayback;
+        public bool IsPaused => TransportState == TransportState.PAUSED_PLAYBACK;
 
-        public bool IsStopped => TransportState == TransportState.Stopped;
+        public bool IsStopped => TransportState == TransportState.STOPPED;
 
         public Action OnDeviceUnavailable { get; set; }
 
@@ -494,7 +494,7 @@ namespace Emby.Dlna.PlayTo
                     cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            TransportState = TransportState.Paused;
+            TransportState = TransportState.PAUSED_PLAYBACK;
 
             RestartTimer(true);
         }
@@ -527,7 +527,7 @@ namespace Emby.Dlna.PlayTo
                 if (transportState.HasValue)
                 {
                     // If we're not playing anything no need to get additional data
-                    if (transportState.Value == TransportState.Stopped)
+                    if (transportState.Value == TransportState.STOPPED)
                     {
                         UpdateMediaInfo(null, transportState.Value);
                     }
@@ -535,9 +535,9 @@ namespace Emby.Dlna.PlayTo
                     {
                         var tuple = await GetPositionInfo(avCommands, cancellationToken).ConfigureAwait(false);
 
-                        var currentObject = tuple.Item2;
+                        var currentObject = tuple.Track;
 
-                        if (tuple.Item1 && currentObject == null)
+                        if (tuple.Success && currentObject == null)
                         {
                             currentObject = await GetMediaInfo(avCommands, cancellationToken).ConfigureAwait(false);
                         }
@@ -556,7 +556,7 @@ namespace Emby.Dlna.PlayTo
                     }
 
                     // If we're not playing anything make sure we don't get data more often than necessary to keep the Session alive
-                    if (transportState.Value == TransportState.Stopped)
+                    if (transportState.Value == TransportState.STOPPED)
                     {
                         RestartTimerInactive();
                     }
@@ -797,7 +797,7 @@ namespace Emby.Dlna.PlayTo
             return null;
         }
 
-        private async Task<(bool, UBaseObject)> GetPositionInfo(TransportCommands avCommands, CancellationToken cancellationToken)
+        private async Task<(bool Success, UBaseObject Track)> GetPositionInfo(TransportCommands avCommands, CancellationToken cancellationToken)
         {
             var command = avCommands.ServiceActions.FirstOrDefault(c => c.Name == "GetPositionInfo");
             if (command == null)
@@ -1229,7 +1229,7 @@ namespace Emby.Dlna.PlayTo
             }
             else if (previousMediaInfo == null)
             {
-                if (state != TransportState.Stopped)
+                if (state != TransportState.STOPPED)
                 {
                     OnPlaybackStart(mediaInfo);
                 }

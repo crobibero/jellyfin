@@ -126,7 +126,7 @@ namespace Jellyfin.Api.Controllers
             User? user = null;
             BaseItem parentItem = _libraryManager.GetParentItem(parentId, userId);
 
-            if (userId.HasValue && !userId.Equals(Guid.Empty))
+            if (userId.HasValue && !userId.Equals(default))
             {
                 user = _userManager.GetUserById(userId.Value);
             }
@@ -243,11 +243,10 @@ namespace Jellyfin.Api.Controllers
                 return dto;
             });
 
-            return new QueryResult<BaseItemDto>
-            {
-                Items = dtos.ToArray(),
-                TotalRecordCount = result.TotalRecordCount
-            };
+            return new QueryResult<BaseItemDto>(
+                query.StartIndex,
+                result.TotalRecordCount,
+                dtos.ToArray());
         }
 
         /// <summary>
@@ -330,7 +329,7 @@ namespace Jellyfin.Api.Controllers
             User? user = null;
             BaseItem parentItem = _libraryManager.GetParentItem(parentId, userId);
 
-            if (userId.HasValue && !userId.Equals(Guid.Empty))
+            if (userId.HasValue && !userId.Equals(default))
             {
                 user = _userManager.GetUserById(userId.Value);
             }
@@ -447,11 +446,10 @@ namespace Jellyfin.Api.Controllers
                 return dto;
             });
 
-            return new QueryResult<BaseItemDto>
-            {
-                Items = dtos.ToArray(),
-                TotalRecordCount = result.TotalRecordCount
-            };
+            return new QueryResult<BaseItemDto>(
+                query.StartIndex,
+                result.TotalRecordCount,
+                dtos.ToArray());
         }
 
         /// <summary>
@@ -469,7 +467,7 @@ namespace Jellyfin.Api.Controllers
 
             var item = _libraryManager.GetArtist(name, dtoOptions);
 
-            if (userId.HasValue && !userId.Equals(Guid.Empty))
+            if (userId.HasValue && !userId.Value.Equals(default))
             {
                 var user = _userManager.GetUserById(userId.Value);
 

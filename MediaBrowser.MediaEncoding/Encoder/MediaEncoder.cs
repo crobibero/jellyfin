@@ -92,6 +92,9 @@ namespace MediaBrowser.MediaEncoding.Encoder
         /// <inheritdoc />
         public string EncoderPath => _ffmpegPath;
 
+        /// <inheritdoc />
+        public string ProbePath => _ffprobePath;
+
         public Version EncoderVersion => _ffmpegVersion;
 
         public bool IsVaapiDeviceAmd => _isVaapiDeviceAmd;
@@ -458,14 +461,16 @@ namespace MediaBrowser.MediaEncoding.Encoder
 
             using (var processWrapper = new ProcessWrapper(process, this))
             {
+                await using var memoryStream = new MemoryStream();
                 _logger.LogDebug("Starting ffprobe with args {Args}", args);
                 StartProcess(processWrapper);
-
+                await process.StandardOutput.BaseStream.CopyToAsync(memoryStream, cancellationToken: cancellationToken);
+                memoryStream.Seek(0, SeekOrigin.Begin);
                 InternalMediaInfoResult result;
                 try
                 {
                     result = await JsonSerializer.DeserializeAsync<InternalMediaInfoResult>(
-                                        process.StandardOutput.BaseStream,
+                                        memoryStream,
                                         _jsonSerializerOptions,
                                         cancellationToken: cancellationToken).ConfigureAwait(false);
                 }

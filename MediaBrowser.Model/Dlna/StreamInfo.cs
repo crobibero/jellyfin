@@ -23,7 +23,6 @@ namespace MediaBrowser.Model.Dlna
             AudioCodecs = Array.Empty<string>();
             VideoCodecs = Array.Empty<string>();
             SubtitleCodecs = Array.Empty<string>();
-            TranscodeReasons = Array.Empty<TranscodeReason>();
             StreamOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
@@ -103,7 +102,7 @@ namespace MediaBrowser.Model.Dlna
 
         public string PlaySessionId { get; set; }
 
-        public TranscodeReason[] TranscodeReasons { get; set; }
+        public TranscodeReason TranscodeReasons { get; set; }
 
         public Dictionary<string, string> StreamOptions { get; private set; }
 
@@ -599,11 +598,6 @@ namespace MediaBrowser.Model.Dlna
 
         public string ToUrl(string baseUrl, string accessToken)
         {
-            if (PlayMethod == PlayMethod.DirectPlay)
-            {
-                return MediaSource.Path;
-            }
-
             if (string.IsNullOrEmpty(baseUrl))
             {
                 throw new ArgumentNullException(nameof(baseUrl));
@@ -675,7 +669,7 @@ namespace MediaBrowser.Model.Dlna
             return string.Format(CultureInfo.InvariantCulture, "{0}/videos/{1}/stream{2}?{3}", baseUrl, ItemId, extension, queryString);
         }
 
-        private static List<NameValuePair> BuildParams(StreamInfo item, string accessToken)
+        private static IEnumerable<NameValuePair> BuildParams(StreamInfo item, string accessToken)
         {
             var list = new List<NameValuePair>();
 
@@ -799,40 +793,18 @@ namespace MediaBrowser.Model.Dlna
 
             if (!item.IsDirectStream)
             {
-                list.Add(new NameValuePair("TranscodeReasons", string.Join(',', item.TranscodeReasons.Distinct())));
+                list.Add(new NameValuePair("TranscodeReasons", item.TranscodeReasons.ToString()));
             }
 
             return list;
         }
 
-        public List<SubtitleStreamInfo> GetExternalSubtitles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, string baseUrl, string accessToken)
-        {
-            return GetExternalSubtitles(transcoderSupport, includeSelectedTrackOnly, false, baseUrl, accessToken);
-        }
-
-        public List<SubtitleStreamInfo> GetExternalSubtitles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, bool enableAllProfiles, string baseUrl, string accessToken)
-        {
-            var list = GetSubtitleProfiles(transcoderSupport, includeSelectedTrackOnly, enableAllProfiles, baseUrl, accessToken);
-            var newList = new List<SubtitleStreamInfo>();
-
-            // First add the selected track
-            foreach (SubtitleStreamInfo stream in list)
-            {
-                if (stream.DeliveryMethod == SubtitleDeliveryMethod.External)
-                {
-                    newList.Add(stream);
-                }
-            }
-
-            return newList;
-        }
-
-        public List<SubtitleStreamInfo> GetSubtitleProfiles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, string baseUrl, string accessToken)
+        public IEnumerable<SubtitleStreamInfo> GetSubtitleProfiles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, string baseUrl, string accessToken)
         {
             return GetSubtitleProfiles(transcoderSupport, includeSelectedTrackOnly, false, baseUrl, accessToken);
         }
 
-        public List<SubtitleStreamInfo> GetSubtitleProfiles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, bool enableAllProfiles, string baseUrl, string accessToken)
+        public IEnumerable<SubtitleStreamInfo> GetSubtitleProfiles(ITranscoderSupport transcoderSupport, bool includeSelectedTrackOnly, bool enableAllProfiles, string baseUrl, string accessToken)
         {
             var list = new List<SubtitleStreamInfo>();
 

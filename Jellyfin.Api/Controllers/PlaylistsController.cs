@@ -181,7 +181,9 @@ namespace Jellyfin.Api.Controllers
                 return NotFound();
             }
 
-            var user = !userId.Equals(Guid.Empty) ? _userManager.GetUserById(userId) : null;
+            var user = userId.Equals(default)
+                ? null
+                : _userManager.GetUserById(userId);
 
             var items = playlist.GetManageableItems().ToArray();
 
@@ -208,11 +210,10 @@ namespace Jellyfin.Api.Controllers
                 dtos[index].PlaylistItemId = items[index].Item1.Id;
             }
 
-            var result = new QueryResult<BaseItemDto>
-            {
-                Items = dtos,
-                TotalRecordCount = count
-            };
+            var result = new QueryResult<BaseItemDto>(
+                startIndex,
+                count,
+                dtos);
 
             return result;
         }

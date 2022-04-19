@@ -238,12 +238,7 @@ namespace MediaBrowser.Controller.Entities
 
         private QueryResult<BaseItem> ConvertToResult(List<BaseItem> items)
         {
-            var arr = items.ToArray();
-            return new QueryResult<BaseItem>
-            {
-                Items = arr,
-                TotalRecordCount = arr.Length
-            };
+            return new QueryResult<BaseItem>(items);
         }
 
         private QueryResult<BaseItem> GetMovieGenres(Folder parent, User user, InternalItemsQuery query)
@@ -414,16 +409,6 @@ namespace MediaBrowser.Controller.Entities
             return _libraryManager.GetItemsResult(query);
         }
 
-        private QueryResult<BaseItem> GetResult<T>(QueryResult<T> result)
-            where T : BaseItem
-        {
-            return new QueryResult<BaseItem>
-            {
-                Items = result.Items, // TODO Fix The co-variant conversion between T[] and BaseItem[], this can generate runtime issues if T is not BaseItem.
-                TotalRecordCount = result.TotalRecordCount
-            };
-        }
-
         private QueryResult<BaseItem> GetResult<T>(
             IEnumerable<T> items,
             InternalItemsQuery query)
@@ -483,11 +468,10 @@ namespace MediaBrowser.Controller.Entities
                 itemsArray = itemsArray.Skip(query.StartIndex.Value).ToArray();
             }
 
-            return new QueryResult<BaseItem>
-            {
-                TotalRecordCount = totalCount,
-                Items = itemsArray
-            };
+            return new QueryResult<BaseItem>(
+                query.StartIndex,
+                totalCount,
+                itemsArray);
         }
 
         public static bool Filter(BaseItem item, User user, InternalItemsQuery query, IUserDataManager userDataManager, ILibraryManager libraryManager)
@@ -1004,7 +988,7 @@ namespace MediaBrowser.Controller.Entities
         public static IEnumerable<BaseItem> FilterForAdjacency(List<BaseItem> list, string adjacentToId)
         {
             var adjacentToIdGuid = new Guid(adjacentToId);
-            var adjacentToItem = list.FirstOrDefault(i => i.Id == adjacentToIdGuid);
+            var adjacentToItem = list.FirstOrDefault(i => i.Id.Equals(adjacentToIdGuid));
 
             var index = list.IndexOf(adjacentToItem);
 
@@ -1021,7 +1005,7 @@ namespace MediaBrowser.Controller.Entities
                 nextId = list[index + 1].Id;
             }
 
-            return list.Where(i => i.Id == previousId || i.Id == nextId || i.Id == adjacentToIdGuid);
+            return list.Where(i => i.Id.Equals(previousId) || i.Id.Equals(nextId) || i.Id.Equals(adjacentToIdGuid));
         }
     }
 }

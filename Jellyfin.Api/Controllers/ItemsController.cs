@@ -228,9 +228,7 @@ namespace Jellyfin.Api.Controllers
             [FromQuery] bool enableTotalRecordCount = true,
             [FromQuery] bool? enableImages = true)
         {
-            var user = !userId.Equals(Guid.Empty)
-                ? _userManager.GetUserById(userId)
-                : null;
+            var user = userId.Equals(default) ? null : _userManager.GetUserById(userId);
             var dtoOptions = new DtoOptions { Fields = fields }
                 .AddClientFields(Request)
                 .AddAdditionalDtoOptions(enableImages, enableUserData, imageTypeLimit, enableImageTypes);
@@ -493,10 +491,13 @@ namespace Jellyfin.Api.Controllers
             else
             {
                 var itemsArray = folder.GetChildren(user, true);
-                result = new QueryResult<BaseItem> { Items = itemsArray, TotalRecordCount = itemsArray.Count, StartIndex = 0 };
+                result = new QueryResult<BaseItem>(itemsArray);
             }
 
-            return new QueryResult<BaseItemDto> { StartIndex = startIndex.GetValueOrDefault(), TotalRecordCount = result.TotalRecordCount, Items = _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user) };
+            return new QueryResult<BaseItemDto>(
+                startIndex,
+                result.TotalRecordCount,
+                _dtoService.GetBaseItemDtos(result.Items, dtoOptions, user));
         }
 
         /// <summary>
@@ -798,7 +799,7 @@ namespace Jellyfin.Api.Controllers
             var ancestorIds = Array.Empty<Guid>();
 
             var excludeFolderIds = user.GetPreferenceValues<Guid>(PreferenceKind.LatestItemExcludes);
-            if (parentIdGuid.Equals(Guid.Empty) && excludeFolderIds.Length > 0)
+            if (parentIdGuid.Equals(default) && excludeFolderIds.Length > 0)
             {
                 ancestorIds = _libraryManager.GetUserRootFolder().GetChildren(user, true)
                     .Where(i => i is Folder)
@@ -811,7 +812,7 @@ namespace Jellyfin.Api.Controllers
             if (excludeActiveSessions)
             {
                 excludeItemIds = _sessionManager.Sessions
-                    .Where(s => s.UserId == userId && s.NowPlayingItem != null)
+                    .Where(s => s.UserId.Equals(userId) && s.NowPlayingItem != null)
                     .Select(s => s.NowPlayingItem.Id)
                     .ToArray();
             }
@@ -838,12 +839,10 @@ namespace Jellyfin.Api.Controllers
 
             var returnItems = _dtoService.GetBaseItemDtos(itemsResult.Items, dtoOptions, user);
 
-            return new QueryResult<BaseItemDto>
-            {
-                StartIndex = startIndex.GetValueOrDefault(),
-                TotalRecordCount = itemsResult.TotalRecordCount,
-                Items = returnItems
-            };
+            return new QueryResult<BaseItemDto>(
+                startIndex,
+                itemsResult.TotalRecordCount,
+                returnItems);
         }
     }
 }

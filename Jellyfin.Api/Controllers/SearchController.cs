@@ -121,11 +121,7 @@ namespace Jellyfin.Api.Controllers
                 IsSports = isSports
             });
 
-            return new SearchHintResult
-            {
-                TotalRecordCount = result.TotalRecordCount,
-                SearchHints = result.Items.Select(GetSearchHintResult).ToArray()
-            };
+            return new SearchHintResult(result.Items.Select(GetSearchHintResult).ToArray(), result.TotalRecordCount);
         }
 
         /// <summary>
@@ -209,7 +205,7 @@ namespace Jellyfin.Api.Controllers
                     break;
             }
 
-            if (!item.ChannelId.Equals(Guid.Empty))
+            if (!item.ChannelId.Equals(default))
             {
                 var channel = _libraryManager.GetItemById(item.ChannelId);
                 result.ChannelName = channel?.Name;

@@ -21,7 +21,6 @@ using MediaBrowser.Controller.LiveTv;
 using MediaBrowser.Controller.Persistence;
 using MediaBrowser.Controller.Playlists;
 using MediaBrowser.Controller.Providers;
-using MediaBrowser.Model.Drawing;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Querying;
@@ -458,11 +457,6 @@ namespace Emby.Server.Implementations.Dto
             }
         }
 
-        private string GetDtoId(BaseItem item)
-        {
-            return item.Id.ToString("N", CultureInfo.InvariantCulture);
-        }
-
         private void SetMusicVideoProperties(BaseItemDto dto, MusicVideo item)
         {
             if (!string.IsNullOrEmpty(item.Album))
@@ -584,7 +578,7 @@ namespace Emby.Server.Implementations.Dto
                 if (dictionary.TryGetValue(person.Name, out Person entity))
                 {
                     baseItemPerson.PrimaryImageTag = GetTagAndFillBlurhash(dto, entity, ImageType.Primary);
-                    baseItemPerson.Id = entity.Id.ToString("N", CultureInfo.InvariantCulture);
+                    baseItemPerson.Id = entity.Id;
                     if (dto.ImageBlurHashes != null)
                     {
                         // Only add BlurHash for the person's image.
@@ -743,8 +737,7 @@ namespace Emby.Server.Implementations.Dto
                 dto.Tags = item.Tags;
             }
 
-            var hasAspectRatio = item as IHasAspectRatio;
-            if (hasAspectRatio != null)
+            if (item is IHasAspectRatio hasAspectRatio)
             {
                 dto.AspectRatio = hasAspectRatio.AspectRatio;
             }
@@ -894,15 +887,13 @@ namespace Emby.Server.Implementations.Dto
                 dto.CommunityRating = item.CommunityRating;
             }
 
-            var supportsPlaceHolders = item as ISupportsPlaceHolders;
-            if (supportsPlaceHolders != null && supportsPlaceHolders.IsPlaceHolder)
+            if (item is ISupportsPlaceHolders supportsPlaceHolders && supportsPlaceHolders.IsPlaceHolder)
             {
                 dto.IsPlaceHolder = supportsPlaceHolders.IsPlaceHolder;
             }
 
             // Add audio info
-            var audio = item as Audio;
-            if (audio != null)
+            if (item is Audio audio)
             {
                 dto.Album = audio.Album;
                 if (audio.ExtraType.HasValue)
@@ -975,8 +966,7 @@ namespace Emby.Server.Implementations.Dto
                     }).Where(i => i != null).ToArray();
             }
 
-            var hasAlbumArtist = item as IHasAlbumArtist;
-            if (hasAlbumArtist != null)
+            if (item is IHasAlbumArtist hasAlbumArtist)
             {
                 dto.AlbumArtist = hasAlbumArtist.AlbumArtists.FirstOrDefault();
 
@@ -1102,12 +1092,13 @@ namespace Emby.Server.Implementations.Dto
 
             if (options.ContainsField(ItemFields.LocalTrailerCount))
             {
-                allExtras ??= item.GetExtras().ToArray();
-                dto.LocalTrailerCount = allExtras.Count(i => i.ExtraType == ExtraType.Trailer);
-
                 if (item is IHasTrailers hasTrailers)
                 {
-                    dto.LocalTrailerCount += hasTrailers.GetTrailerCount();
+                    dto.LocalTrailerCount = hasTrailers.GetTrailerCount();
+                }
+                else
+                {
+                    dto.LocalTrailerCount = (allExtras ?? item.GetExtras()).Count(i => i.ExtraType == ExtraType.Trailer);
                 }
             }
 
@@ -1317,35 +1308,35 @@ namespace Emby.Server.Implementations.Dto
 
                 var allImages = parent.ImageInfos;
 
-                if (logoLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Logo)) && dto.ParentLogoItemId == null)
+                if (logoLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Logo)) && dto.ParentLogoItemId is null)
                 {
                     var image = allImages.FirstOrDefault(i => i.Type == ImageType.Logo);
 
                     if (image != null)
                     {
-                        dto.ParentLogoItemId = GetDtoId(parent);
+                        dto.ParentLogoItemId = parent.Id;
                         dto.ParentLogoImageTag = GetTagAndFillBlurhash(dto, parent, image);
                     }
                 }
 
-                if (artLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Art)) && dto.ParentArtItemId == null)
+                if (artLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Art)) && dto.ParentArtItemId is null)
                 {
                     var image = allImages.FirstOrDefault(i => i.Type == ImageType.Art);
 
                     if (image != null)
                     {
-                        dto.ParentArtItemId = GetDtoId(parent);
+                        dto.ParentArtItemId = parent.Id;
                         dto.ParentArtImageTag = GetTagAndFillBlurhash(dto, parent, image);
                     }
                 }
 
-                if (thumbLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Thumb)) && (dto.ParentThumbItemId == null || parent is Series) && parent is not ICollectionFolder && parent is not UserView)
+                if (thumbLimit > 0 && !(imageTags != null && imageTags.ContainsKey(ImageType.Thumb)) && (dto.ParentThumbItemId is null || parent is Series) && parent is not ICollectionFolder && parent is not UserView)
                 {
                     var image = allImages.FirstOrDefault(i => i.Type == ImageType.Thumb);
 
                     if (image != null)
                     {
-                        dto.ParentThumbItemId = GetDtoId(parent);
+                        dto.ParentThumbItemId = parent.Id;
                         dto.ParentThumbImageTag = GetTagAndFillBlurhash(dto, parent, image);
                     }
                 }
@@ -1356,7 +1347,7 @@ namespace Emby.Server.Implementations.Dto
 
                     if (images.Count > 0)
                     {
-                        dto.ParentBackdropItemId = GetDtoId(parent);
+                        dto.ParentBackdropItemId = parent.Id;
                         dto.ParentBackdropImageTags = GetTagsAndFillBlurhashes(dto, parent, ImageType.Backdrop, images);
                     }
                 }

@@ -172,24 +172,16 @@ namespace Emby.Server.Implementations.Library
 
             foreach (var source in dynamicMediaSources)
             {
-                if (user != null)
-                {
-                    SetDefaultAudioAndSubtitleStreamIndexes(item, source, user);
-                }
-
                 // Validate that this is actually possible
                 if (source.SupportsDirectStream)
                 {
                     source.SupportsDirectStream = SupportsDirectStream(source.Path, source.Protocol);
                 }
 
-                list.Add(source);
-            }
-
-            if (user != null)
-            {
-                foreach (var source in list)
+                if (user != null)
                 {
+                    SetDefaultAudioAndSubtitleStreamIndexes(item, source, user);
+
                     if (string.Equals(item.MediaType, MediaType.Audio, StringComparison.OrdinalIgnoreCase))
                     {
                         source.SupportsTranscoding = user.HasPermission(PermissionKind.EnableAudioPlaybackTranscoding);
@@ -200,6 +192,8 @@ namespace Emby.Server.Implementations.Library
                         source.SupportsDirectStream = user.HasPermission(PermissionKind.EnablePlaybackRemuxing);
                     }
                 }
+
+                list.Add(source);
             }
 
             return SortMediaSources(list);
@@ -338,13 +332,23 @@ namespace Emby.Server.Implementations.Library
                 foreach (var source in sources)
                 {
                     SetDefaultAudioAndSubtitleStreamIndexes(item, source, user);
+
+                    if (string.Equals(item.MediaType, MediaType.Audio, StringComparison.OrdinalIgnoreCase))
+                    {
+                        source.SupportsTranscoding = user.HasPermission(PermissionKind.EnableAudioPlaybackTranscoding);
+                    }
+                    else if (string.Equals(item.MediaType, MediaType.Video, StringComparison.OrdinalIgnoreCase))
+                    {
+                        source.SupportsTranscoding = user.HasPermission(PermissionKind.EnableVideoPlaybackTranscoding);
+                        source.SupportsDirectStream = user.HasPermission(PermissionKind.EnablePlaybackRemuxing);
+                    }
                 }
             }
 
             return sources;
         }
 
-        private string[] NormalizeLanguage(string language)
+        private IReadOnlyList<string> NormalizeLanguage(string language)
         {
             if (string.IsNullOrEmpty(language))
             {
@@ -514,10 +518,10 @@ namespace Emby.Server.Implementations.Library
             _logger.LogInformation("Live stream opened: {@MediaSource}", mediaSource);
             var clone = JsonSerializer.Deserialize<MediaSourceInfo>(json, _jsonOptions);
 
-            if (!request.UserId.Equals(Guid.Empty))
+            if (!request.UserId.Equals(default))
             {
                 var user = _userManager.GetUserById(request.UserId);
-                var item = request.ItemId.Equals(Guid.Empty)
+                var item = request.ItemId.Equals(default)
                     ? null
                     : _libraryManager.GetItemById(request.ItemId);
                 SetDefaultAudioAndSubtitleStreamIndexes(item, clone, user);

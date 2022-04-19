@@ -104,7 +104,7 @@ namespace Jellyfin.Api.Helpers
         }
 
         internal static QueryResult<BaseItemDto> CreateQueryResult(
-            QueryResult<(BaseItem, ItemCounts)> result,
+            QueryResult<(BaseItem Item, ItemCounts ItemCounts)> result,
             DtoOptions dtoOptions,
             IDtoService dtoService,
             bool includeItemTypes,
@@ -131,11 +131,10 @@ namespace Jellyfin.Api.Helpers
                 return dto;
             });
 
-            return new QueryResult<BaseItemDto>
-            {
-                Items = dtos.ToArray(),
-                TotalRecordCount = result.TotalRecordCount
-            };
+            return new QueryResult<BaseItemDto>(
+                result.StartIndex,
+                result.TotalRecordCount,
+                dtos.ToArray());
         }
     }
 }
