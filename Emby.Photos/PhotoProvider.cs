@@ -27,7 +27,7 @@ namespace Emby.Photos
         private readonly IImageProcessor _imageProcessor;
 
         // These are causing taglib to hang
-        private readonly string[] _includeExtensions = new string[] { ".jpg", ".jpeg", ".png", ".tiff", ".cr2", ".webp", ".avif" };
+        private readonly string[] _includeExtensions = [".jpg", ".jpeg", ".png", ".tiff", ".cr2", ".webp", ".avif", ".heic"];
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PhotoProvider" /> class.

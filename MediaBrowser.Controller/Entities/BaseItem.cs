@@ -46,11 +46,11 @@ namespace MediaBrowser.Controller.Entities
         /// <summary>
         /// The supported image extensions.
         /// </summary>
-        public static readonly string[] SupportedImageExtensions
-            = new[] { ".png", ".jpg", ".jpeg", ".webp", ".tbn", ".gif" };
+        public static readonly string[] SupportedImageExtensions = [".png", ".jpg", ".jpeg", ".webp", ".tbn", ".gif", ".heic"];
 
-        private static readonly List<string> _supportedExtensions = new List<string>(SupportedImageExtensions)
-        {
+        private static readonly string[] _supportedExtensions =
+        [
+            ..SupportedImageExtensions,
             ".nfo",
             ".xml",
             ".srt",
@@ -63,7 +63,7 @@ namespace MediaBrowser.Controller.Entities
             ".bif",
             ".smi",
             ".ttml"
-        };
+        ];
 
         /// <summary>
         /// Extra types that should be counted and displayed as "Special Features" in the UI.
