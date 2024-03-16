@@ -177,4 +177,71 @@ public static class RequestHelpers
             result.TotalRecordCount,
             dtos.ToArray());
     }
+
+    /// <summary>
+    /// Determine whether the request can access the item.
+    /// </summary>
+    /// <param name="libraryManager">Instance of <see cref="ILibraryManager"/>.</param>
+    /// <param name="userManager">Instance of <see cref="IUserManager"/>.</param>
+    /// <param name="httpContext">The current HttpContext.</param>
+    /// <param name="itemId">The item id.</param>
+    /// <param name="userId">The user id (override).</param>
+    /// <returns>The user, item and action result.</returns>
+    internal static (User? User, BaseItem Item) AssertItemAccess(
+        ILibraryManager libraryManager,
+        IUserManager userManager,
+        HttpContext httpContext,
+        Guid itemId,
+        Guid? userId)
+    {
+        BaseItem item;
+        User? user = null;
+
+        if (httpContext.User.Identity?.IsAuthenticated != true)
+        {
+            item = GetItem(libraryManager, itemId);
+            return (null, item);
+        }
+
+        if (httpContext.User.GetIsApiKey())
+        {
+            if (!userId.IsNullOrEmpty())
+            {
+                user = userManager.GetUserById(userId.Value);
+            }
+
+            item = GetItem(libraryManager, itemId);
+            return (user, item);
+        }
+
+        userId = GetUserId(httpContext.User, userId);
+        user = userManager.GetUserById(userId.Value);
+        if (user is null)
+        {
+            throw new ResourceNotFoundException();
+        }
+
+        item = GetItem(libraryManager, itemId);
+        if (item is null)
+        {
+            throw new ResourceNotFoundException();
+        }
+
+        if (item is not UserRootFolder
+            && !item.IsVisibleStandalone(user))
+        {
+            throw new SecurityException();
+        }
+
+        return (user, item);
+    }
+
+    private static BaseItem GetItem(ILibraryManager libraryManager, Guid itemId)
+    {
+        var item = itemId.IsEmpty()
+            ? libraryManager.GetUserRootFolder()
+            : libraryManager.GetItemById(itemId);
+
+        return item ?? throw new ResourceNotFoundException();
+    }
 }

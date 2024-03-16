@@ -77,28 +77,12 @@ public class UserLibraryController : BaseJellyfinApiController
         [FromQuery] Guid? userId,
         [FromRoute, Required] Guid itemId)
     {
-        var requestUserId = RequestHelpers.GetUserId(User, userId);
-        var user = _userManager.GetUserById(requestUserId);
-        if (user is null)
-        {
-            return NotFound();
-        }
-
-        var item = itemId.IsEmpty()
-            ? _libraryManager.GetUserRootFolder()
-            : _libraryManager.GetItemById(itemId);
-
-        if (item is null)
-        {
-            return NotFound();
-        }
-
-        if (item is not UserRootFolder
-            // Check the item is visible for the user
-            && !item.IsVisible(user))
-        {
-            return Unauthorized($"{user.Username} is not permitted to access item {item.Name}.");
-        }
+        var (user, item) = RequestHelpers.AssertItemAccess(
+            _libraryManager,
+            _userManager,
+            Request.HttpContext,
+            itemId,
+            userId);
 
         await RefreshItemOnDemandIfNeeded(item).ConfigureAwait(false);
 
