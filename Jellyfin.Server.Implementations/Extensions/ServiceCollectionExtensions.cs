@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using EFCoreSecondLevelCacheInterceptor;
 using MediaBrowser.Common.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,28 @@ namespace Jellyfin.Server.Implementations.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
+    /// Adds the EF second level cache to the service collection.
+    /// </summary>
+    /// <param name="serviceCollection">The service collection.</param>
+    /// <returns>The updated service collection.</returns>
+    public static IServiceCollection AddJellyfinDbCache(this IServiceCollection serviceCollection)
+    {
+        serviceCollection
+            .AddFusionCache()
+            .WithCysharpMemoryPackSerializer();
+
+        serviceCollection.AddEFSecondLevelCache(options =>
+            options
+                .UseFusionCacheProvider()
+                .CacheAllQueries(CacheExpirationMode.Sliding, TimeSpan.FromMinutes(10))
+                .UseCacheKeyPrefix("EF_")
+                // Don't cache null values, or empty result set.
+                .SkipCachingResults(r => r.Value == null || (r.Value is EFTableRows rows && rows.RowsCount == 0)));
+
+        return serviceCollection;
+    }
+
+    /// <summary>
     /// Adds the <see cref="IDbContextFactory{TContext}"/> interface to the service collection with second level caching enabled.
     /// </summary>
     /// <param name="serviceCollection">An instance of the <see cref="IServiceCollection"/> interface.</param>
@@ -21,7 +44,8 @@ public static class ServiceCollectionExtensions
         serviceCollection.AddPooledDbContextFactory<JellyfinDbContext>((serviceProvider, opt) =>
         {
             var applicationPaths = serviceProvider.GetRequiredService<IApplicationPaths>();
-            opt.UseSqlite($"Filename={Path.Combine(applicationPaths.DataPath, "jellyfin.db")};Pooling=false");
+            opt.UseSqlite($"Filename={Path.Combine(applicationPaths.DataPath, "jellyfin.db")};Pooling=false")
+                .AddInterceptors(serviceProvider.GetRequiredService<SecondLevelCacheInterceptor>());
         });
 
         return serviceCollection;

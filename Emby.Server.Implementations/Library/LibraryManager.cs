@@ -62,7 +62,7 @@ namespace Emby.Server.Implementations.Library
         private const string ShortcutFileExtension = ".mblink";
 
         private readonly ILogger<LibraryManager> _logger;
-        private readonly ConcurrentDictionary<Guid, BaseItem> _cache;
+        // private readonly ConcurrentDictionary<Guid, BaseItem> _cache;
         private readonly ITaskManager _taskManager;
         private readonly IUserManager _userManager;
         private readonly IUserDataManager _userDataRepository;
@@ -145,7 +145,7 @@ namespace Emby.Server.Implementations.Library
             _mediaEncoder = mediaEncoder;
             _itemRepository = itemRepository;
             _imageProcessor = imageProcessor;
-            _cache = new ConcurrentDictionary<Guid, BaseItem>();
+            // _cache = new ConcurrentDictionary<Guid, BaseItem>();
             _namingOptions = namingOptions;
             _peopleRepository = peopleRepository;
             _extraResolver = new ExtraResolver(loggerFactory.CreateLogger<ExtraResolver>(), namingOptions, directoryService);
@@ -300,7 +300,7 @@ namespace Emby.Server.Implementations.Library
                 }
             }
 
-            _cache[item.Id] = item;
+            // _cache[item.Id] = item;
         }
 
         public void DeleteItem(BaseItem item, DeleteOptions options)
@@ -457,10 +457,10 @@ namespace Emby.Server.Implementations.Library
             foreach (var child in children)
             {
                 _itemRepository.DeleteItem(child.Id);
-                _cache.TryRemove(child.Id, out _);
+                // _cache.TryRemove(child.Id, out _);
             }
 
-            _cache.TryRemove(item.Id, out _);
+            // _cache.TryRemove(item.Id, out _);
 
             ReportItemRemoved(item, parent);
         }
@@ -1235,12 +1235,14 @@ namespace Emby.Server.Implementations.Library
                 throw new ArgumentException("Guid can't be empty", nameof(id));
             }
 
+            /*
             if (_cache.TryGetValue(id, out BaseItem? item))
             {
                 return item;
             }
+            */
 
-            item = RetrieveItem(id);
+            var item = RetrieveItem(id);
 
             if (item is not null)
             {

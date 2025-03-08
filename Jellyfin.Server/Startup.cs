@@ -67,6 +67,7 @@ namespace Jellyfin.Server
             // TODO remove once this is fixed upstream https://github.com/dotnet/aspnetcore/issues/34371
             services.AddSingleton<IActionResultExecutor<PhysicalFileResult>, SymlinkFollowingPhysicalFileResultExecutor>();
             services.AddJellyfinApi(_serverApplicationHost.GetApiPluginAssemblies(), _serverConfigurationManager.GetNetworkConfiguration());
+            services.AddJellyfinDbCache();
             services.AddJellyfinDbContext();
             services.AddJellyfinApiSwagger();
 
