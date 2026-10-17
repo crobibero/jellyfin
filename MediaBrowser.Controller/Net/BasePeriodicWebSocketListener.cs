@@ -26,7 +26,7 @@ namespace MediaBrowser.Controller.Net
         where TStateType : WebSocketListenerState, new()
         where TReturnDataType : class
     {
-        private readonly Channel<bool> _channel = Channel.CreateUnbounded<bool>(new UnboundedChannelOptions
+        private readonly Channel<(bool Force, Func<IWebSocketConnection, TStateType, bool> Filter)> _channel = Channel.CreateUnbounded<(bool Force, Func<IWebSocketConnection, TStateType, bool> Filter)>(new UnboundedChannelOptions
         {
             AllowSynchronousContinuations = false,
             SingleReader = true,
@@ -144,15 +144,38 @@ namespace MediaBrowser.Controller.Net
 
         protected void SendData(bool force)
         {
-            _channel.Writer.TryWrite(force);
+            _channel.Writer.TryWrite((force, null));
+        }
+
+        /// <summary>
+        /// Queues a send to the connections for which <paramref name="filter"/> returns <c>true</c>.
+        /// </summary>
+        /// <param name="force">Whether to send before the interval of the connection has elapsed.</param>
+        /// <param name="filter">Returns <c>true</c> for each connection that gets the data. It runs while the connection list is locked, so it must not block.</param>
+        protected void SendData(bool force, Func<IWebSocketConnection, TStateType, bool> filter)
+        {
+            ArgumentNullException.ThrowIfNull(filter);
+
+            _channel.Writer.TryWrite((force, filter));
+        }
+
+        /// <summary>
+        /// Called after <paramref name="data"/> was sent on <paramref name="connection"/>.
+        /// </summary>
+        /// <param name="connection">The connection.</param>
+        /// <param name="state">The state of the connection.</param>
+        /// <param name="data">The data that was sent.</param>
+        protected virtual void OnDataSent(IWebSocketConnection connection, TStateType state, TReturnDataType data)
+        {
         }
 
         private async Task HandleMessages()
         {
             while (await _channel.Reader.WaitToReadAsync().ConfigureAwait(false))
             {
-                while (_channel.Reader.TryRead(out var force))
+                while (_channel.Reader.TryRead(out var request))
                 {
+                    var (force, filter) = request;
                     try
                     {
                         (IWebSocketConnection Connection, CancellationTokenSource CancellationTokenSource, TStateType State)[] tuples;
@@ -174,7 +197,8 @@ namespace MediaBrowser.Controller.Net
                                     }
 
                                     var state = c.State;
-                                    return force || (now - state.DateLastSendUtc).TotalMilliseconds >= state.IntervalMs;
+                                    return (force || (now - state.DateLastSendUtc).TotalMilliseconds >= state.IntervalMs)
+                                        && (filter is null || filter(c.Connection, state));
                                 })
                                 .ToArray();
                         }
@@ -225,6 +249,7 @@ namespace MediaBrowser.Controller.Net
                     cancellationToken).ConfigureAwait(false);
 
                 state.DateLastSendUtc = DateTime.UtcNow;
+                OnDataSent(connection, state, data);
             }
             catch (OperationCanceledException)
             {

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,7 +17,7 @@ namespace Jellyfin.Api.WebSocketListeners;
 /// <summary>
 /// Class SessionInfoWebSocketListener.
 /// </summary>
-public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnumerable<SessionInfoDto>, WebSocketListenerState>
+public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnumerable<SessionInfoDto>, SessionInfoWebSocketListenerState>
 {
     private readonly ISessionManager _sessionManager;
     private bool _disposed;
@@ -61,18 +62,26 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
     /// <inheritdoc />
     protected override Task<IEnumerable<SessionInfoDto>> GetDataToSendForConnection(IWebSocketConnection connection)
     {
-        var sessions = _sessionManager.Sessions;
+        var restrictedUserId = GetRestrictedUserId(connection.AuthorizationInfo);
 
-        // For non-admin users, filter the sessions to only include their own sessions
-        if (connection.AuthorizationInfo?.User is not null &&
-            !connection.AuthorizationInfo.IsApiKey &&
-            !connection.AuthorizationInfo.User.HasPermission(PermissionKind.IsAdministrator))
+        // OnDataSent reads the list again, so it must be the list that was sent.
+        var sessions = _sessionManager.Sessions
+            .Where(s => CanSeeSession(restrictedUserId, s))
+            .Select(_sessionManager.ToSessionInfoDto)
+            .ToArray();
+
+        return Task.FromResult<IEnumerable<SessionInfoDto>>(sessions);
+    }
+
+    /// <inheritdoc />
+    protected override void OnDataSent(IWebSocketConnection connection, SessionInfoWebSocketListenerState state, IEnumerable<SessionInfoDto> data)
+    {
+        if (GetRestrictedUserId(connection.AuthorizationInfo) is null)
         {
-            var userId = connection.AuthorizationInfo.User.Id;
-            sessions = sessions.Where(s => s.UserId.Equals(userId) || s.ContainsUser(userId));
+            return;
         }
 
-        return Task.FromResult(sessions.Select(_sessionManager.ToSessionInfoDto));
+        state.SentSessionIds = data.Select(s => s.Id).OfType<string>().ToHashSet();
     }
 
     /// <inheritdoc />
@@ -106,40 +115,59 @@ public class SessionInfoWebSocketListener : BasePeriodicWebSocketListener<IEnume
         }
 
         base.Start(message);
+
+        // Events on sessions this connection cannot see do not reach it, so it needs the current list now.
+        SendData(true, (connection, _) => connection == message.Connection);
+    }
+
+    private static Guid? GetRestrictedUserId(AuthorizationInfo? authorizationInfo)
+        => authorizationInfo?.User is { } user
+            && !authorizationInfo.IsApiKey
+            && !user.HasPermission(PermissionKind.IsAdministrator)
+            ? user.Id
+            : null;
+
+    private static bool CanSeeSession(Guid? restrictedUserId, SessionInfo session)
+        => restrictedUserId is not { } userId || session.ContainsUser(userId);
+
+    private void SendSessionData(SessionInfo session, bool force)
+    {
+        // The client keeps a session it can no longer see until a message omits it.
+        SendData(force, (connection, state) => state.SentSessionIds.Contains(session.Id) || CanSeeSession(GetRestrictedUserId(connection.AuthorizationInfo), session));
     }
 
     private void OnSessionManagerSessionActivity(object? sender, SessionEventArgs e)
     {
-        SendData(false);
+        SendSessionData(e.SessionInfo, false);
     }
 
     private void OnSessionManagerCapabilitiesChanged(object? sender, SessionEventArgs e)
     {
-        SendData(true);
+        SendSessionData(e.SessionInfo, true);
     }
 
     private void OnSessionManagerPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
     {
-        SendData(!e.IsAutomated);
+        SendSessionData(e.Session, !e.IsAutomated);
     }
 
     private void OnSessionManagerPlaybackStopped(object? sender, PlaybackStopEventArgs e)
     {
-        SendData(true);
+        SendSessionData(e.Session, true);
     }
 
     private void OnSessionManagerPlaybackStart(object? sender, PlaybackProgressEventArgs e)
     {
-        SendData(true);
+        SendSessionData(e.Session, true);
     }
 
     private void OnSessionManagerSessionEnded(object? sender, SessionEventArgs e)
     {
-        SendData(true);
+        SendSessionData(e.SessionInfo, true);
     }
 
     private void OnSessionManagerSessionStarted(object? sender, SessionEventArgs e)
     {
-        SendData(true);
+        SendSessionData(e.SessionInfo, true);
     }
 }
